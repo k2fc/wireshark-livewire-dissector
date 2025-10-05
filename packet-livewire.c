@@ -29,6 +29,7 @@ static int hf_lw_unk_u32;
 static int hf_lw_unk_data;
 static int hf_lw_unk_str;
 
+static int hf_lw_term;
 static int hf_lw_term_inip;
 static int hf_lw_term_advv;
 static int hf_lw_term_hwid;
@@ -37,6 +38,7 @@ static int hf_lw_term_nums;
 static int hf_lw_term_atrn;
 static int hf_lw_term_type;
 
+static int hf_lw_src;
 static int hf_lw_src_psid;
 static int hf_lw_src_shab;
 static int hf_lw_src_fsid;
@@ -188,7 +190,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             }
             else if (strcmp(msg_type,"TERM") == 0){
                 int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                proto_item *ti = proto_tree_add_item(tree, proto_lwadv, tvb, offset - 4, len + 7, ENC_NA);
+                proto_item *ti = proto_tree_add_item(tree, hf_lw_term, tvb, offset - 4, len + 7, ENC_NA);
                 proto_tree *term_tree = proto_item_add_subtree(ti, ett_lwadv);
                 proto_item_set_text(ti, "Terminal Information");
                 increment_dissection_depth(pinfo);
@@ -203,7 +205,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 ){
                 int src_num = ((msg_type[1] - '0') * 100) + ((msg_type[2] - '0') * 10) + (msg_type[3] - '0');
                 int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                proto_item *ti = proto_tree_add_item(tree, proto_lwadv, tvb, offset - 4, len + 7, ENC_NA);
+                proto_item *ti = proto_tree_add_item(tree, hf_lw_src, tvb, offset - 4, len + 7, ENC_NA);
                 proto_tree *source_tree = proto_item_add_subtree(ti, ett_lwadv);
                 proto_item_set_text(ti, "Source %d", src_num);
                 increment_dissection_depth(pinfo);
@@ -309,6 +311,7 @@ void proto_register_lwadv(void)
         { &hf_lw_unk_str,   { "Unknown String",         "lwadv.unknown",    FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_opcode,    { "Operation",              "lwadv.opcode",     FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
+        { &hf_lw_term,      { "Terminal Information",   "lwadv.term",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_term_inip, { "IP Address",             "lwadv.term.inip",  FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_term_hwid, { "Hardware ID",            "lwadv.term.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_term_advv, { "Advertisement Version",  "lwadv.term.advv",  FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
@@ -317,6 +320,7 @@ void proto_register_lwadv(void)
         { &hf_lw_term_atrn, { "Terminal Name",          "lwadv.term.atrn",  FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_term_type, { "Type",                   "lwadv.term.type",  FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
+        { &hf_lw_src,       { "Source Information",     "lwadv.src",        FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_src_psid,  { "Livewire Source ID",     "lwadv.src.psid",   FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_src_shab,  { "Sharable",               "lwadv.src.shab",   FT_BOOLEAN, 0,          NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_src_fsid,  { "Multicast address",      "lwadv.src.fsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
