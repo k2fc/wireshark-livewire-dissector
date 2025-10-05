@@ -57,7 +57,17 @@ typedef enum {
     SECTION_BASE,
     SECTION_TERM,
     SECTION_SOURCE,
-} adv_section_e;
+} lw_adv_section_e;
+
+typedef struct {
+    unsigned psid;
+    ws_in4_addr fsid;
+    char* psnm;
+} lw_src_info_t;
+
+typedef union {
+    lw_src_info_t src_info;
+} lw_info_t;
 
 static dissector_handle_t lwadv_handle;
 static const value_string advtypenames[] = {
@@ -162,7 +172,7 @@ static ws_in4_addr swap_endianness(ws_in4_addr value){
             ((value & 0x00FF0000) >> 8) |
             ((value & 0xFF000000) >> 24);
 }
-static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, int offset, adv_section_e section) {
+static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, int offset, lw_adv_section_e section, lw_info_t *info) {
     char* msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII|ENC_NA);
     offset += 4;
     if (get_opcode_description(msg_type)){
@@ -173,7 +183,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
         offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
         for (int i = 0; i < msg_count; i++) {
             increment_dissection_depth(pinfo);
-            offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section);
+            offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
             decrement_dissection_depth(pinfo);
         }
         return offset;
@@ -194,7 +204,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 proto_tree *term_tree = proto_item_add_subtree(ti, ett_lwadv);
                 proto_item_set_text(ti, "Terminal Information");
                 increment_dissection_depth(pinfo);
-                dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM);
+                dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM, NULL);
                 decrement_dissection_depth(pinfo);
                 return offset + len + 3;
             }
@@ -208,9 +218,13 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 proto_item *ti = proto_tree_add_item(tree, hf_lw_src, tvb, offset - 4, len + 7, ENC_NA);
                 proto_tree *source_tree = proto_item_add_subtree(ti, ett_lwadv);
                 proto_item_set_text(ti, "Source %d", src_num);
+                lw_info_t *src_info = wmem_new(pinfo->pool, lw_info_t);
+                src_info->src_info.psnm = "";
                 increment_dissection_depth(pinfo);
-                dissect_lwadv_msg(tvb, pinfo, source_tree, offset + 3, SECTION_SOURCE);
+                dissect_lwadv_msg(tvb, pinfo, source_tree, offset + 3, SECTION_SOURCE, src_info);
                 decrement_dissection_depth(pinfo);
+                proto_item_append_text(ti, ": %d", src_info->src_info.psid);
+                if (strcmp(src_info->src_info.psnm, "")) proto_item_append_text(ti, " (%s)", src_info->src_info.psnm);
                 return offset + len + 3;
             }
             break;
@@ -239,12 +253,19 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             break;
         case SECTION_SOURCE:
             if (strcmp(msg_type,"PSID") == 0){
+                unsigned psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
+                info->src_info.psid = psid;
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psid);
             }
             else if (strcmp(msg_type,"PSNM") == 0){
+                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                char* psnm = tvb_get_string_enc(pinfo->pool, tvb, offset + 3, str_len, ENC_ASCII|ENC_NA);
+                info->src_info.psnm = psnm;
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psnm);
             }
             else if (strcmp(msg_type,"FSID") == 0){
+                ws_in4_addr fsid = tvb_get_ipv4(tvb, offset + 1);
+                info->src_info.fsid = fsid;
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_fsid);
             }
             else if (strcmp(msg_type,"BSID") == 0){
@@ -294,7 +315,7 @@ static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, vo
     proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
     proto_tree_add_item(lwadv_tree, hf_lw_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
     int offset = 16;
-    dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_BASE);
+    dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_BASE, NULL);
     return offset;
 }
 void proto_register_lwadv(void)
@@ -331,7 +352,7 @@ void proto_register_lwadv(void)
         { &hf_lw_busy,      { "Source Allocation",      "lwadv.busy",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_busy_hwid, { "Console HWID",           "lwadv.busy.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_busy_fader,{ "Fader",                  "lwadv.busy.fader", FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_ip,   { "Console IP Address",     "lwadv.busy.fader", FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_ip,   { "Console IP Address",     "lwadv.busy.ip",    FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
     };
 
     static int *ett[] = {
