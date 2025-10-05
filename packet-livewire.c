@@ -42,6 +42,7 @@ static int hf_lw_src_shab;
 static int hf_lw_src_fsid;
 static int hf_lw_src_bsid;
 static int hf_lw_src_psnm;
+static int hf_lw_src_lpid;
 
 static int hf_lw_busy;
 static int hf_lw_busy_hwid;
@@ -250,6 +251,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             else if (strcmp(msg_type,"SHAB") == 0){
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_shab);
             }
+            else if (strcmp(msg_type,"LPID") == 0){
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_lpid);
+            }
             else if (strcmp(msg_type,"BUSY") == 0 && tvb_get_uint8(tvb, offset) == 0x9){
                 proto_item *ti = proto_tree_add_item(tree, hf_lw_busy, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
                 if (tvb_get_uint64(tvb, offset + 1, ENC_BIG_ENDIAN) == 0){
@@ -318,6 +322,7 @@ void proto_register_lwadv(void)
         { &hf_lw_src_fsid,  { "Multicast address",      "lwadv.src.fsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_src_bsid,  { "Backfeed address",       "lwadv.src.bsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_src_psnm,  { "Name",                   "lwadv.src.psnm",   FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_lpid,  { "Logic Port ID",          "lwadv.src.lpid",   FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
 
         { &hf_lw_busy,      { "Source Allocation",      "lwadv.busy",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_busy_hwid, { "Console HWID",           "lwadv.busy.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
