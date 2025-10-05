@@ -20,7 +20,7 @@ static int proto_lwadv = -1;
 
 static int hf_lw_seq;
 static int hf_lw_opcode;
-static int hf_lw_nest;
+static int hf_lw_msg_count;
 static int hf_lw_pver;
 static int hf_lw_advt;
 static int hf_lw_unk_u8;
@@ -168,7 +168,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
         proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
         //proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
         proto_item_append_text(ti, " (%s)", get_opcode_description(msg_type));
-        offset += tree_add_value(tree, tvb, offset, hf_lw_nest);
+        offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
         for (int i = 0; i < msg_count; i++) {
             increment_dissection_depth(pinfo);
             offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section);
@@ -299,7 +299,7 @@ void proto_register_lwadv(void)
 {
     static hf_register_info hf[] = {
         { &hf_lw_seq,       { "Sequence",               "lwadv.seq",        FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_nest,      { "Nested message count",   "lwadv.nest",       FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_msg_count, { "Nested message count",   "lwadv.msgcount",   FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_pver,      { "Protocol Version",       "lwadv.pver",       FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_advt,      { "Advertisement type",     "lwadv.advt",       FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
         { &hf_lw_unk_u8,    { "Unknown Byte",           "lwadv.unknown",    FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
