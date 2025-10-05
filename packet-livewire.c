@@ -46,7 +46,6 @@ static int hf_lw_src_psnm;
 static int hf_lw_busy;
 static int hf_lw_busy_hwid;
 static int hf_lw_busy_fader;
-static int hf_lw_busy_prefix;
 static int hf_lw_busy_ip;
 
 static int ett_lwadv;
@@ -56,12 +55,6 @@ typedef enum {
     SECTION_TERM,
     SECTION_SOURCE,
 } adv_section_e;
-static const value_string lwadv_sections[] = {
-    { SECTION_BASE, "Livewire Advertisement" },
-    { SECTION_TERM, "Terminal" },
-    { SECTION_SOURCE, "Source" },
-    { 0, NULL }
-};
 
 static dissector_handle_t lwadv_handle;
 static const value_string advtypenames[] = {
@@ -103,32 +96,33 @@ static bool validate_header(tvbuff_t* tvb)
 }
 static int tree_add_value(proto_tree *tree, tvbuff_t* tvb, int offset, int hf)
 {
-        switch(tvb_get_uint8(tvb, offset))
-        {
-            case 0x0:
-            case 0x7:
-                proto_tree_add_item(tree, hf, tvb, offset + 1, 1, ENC_BIG_ENDIAN);
-                return 2;
-            case 0x1:
-                proto_tree_add_item(tree, hf, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
-                return 5;
-            case 0x3:
-                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                proto_tree_add_item(tree, hf, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
-                return str_len + 3;
-            case 0x6:
-            case 0x8:
-                proto_tree_add_item(tree, hf, tvb, offset + 1, 2, ENC_BIG_ENDIAN);
-                return 3;
-            case 0x9:
-                proto_tree_add_item(tree, hf, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
-                return 9;
-        }
+    switch(tvb_get_uint8(tvb, offset))
+    {
+        case 0x0:
+        case 0x7:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 1, ENC_BIG_ENDIAN);
+            return 2;
+        case 0x1:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
+            return 5;
+        case 0x3:
+            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tree, hf, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+            return str_len + 3;
+        case 0x6:
+        case 0x8:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 2, ENC_BIG_ENDIAN);
+            return 3;
+        case 0x9:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
+            return 9;
+    }
+    return 0;
 }
 static int dissect_lwadv_unk(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, int offset) {
     if (offset < 4) return 0;
     int len = 0;
-    char* msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset - 4, 4, ENC_ASCII|ENC_NA);
+    unsigned char* msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset - 4, 4, ENC_ASCII|ENC_NA);
     proto_item *ti;
     switch(tvb_get_uint8(tvb, offset))
     {
