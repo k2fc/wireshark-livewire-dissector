@@ -73,6 +73,7 @@ typedef struct {
     ws_in4_addr fsid;
     char* psnm;
     lw_term_info_t* term;
+    bool rtp_added;
 } lw_src_info_t;
 
 typedef struct {
@@ -103,20 +104,14 @@ static char* get_opcode_description(char* opcode)
         return "No operation - container for nested messages";
     return 0;
 }
-static void setup_lw_transport(tvbuff_t *tvb, packet_info *pinfo, int request_frame, lw_src_info_t *src_info){
+static void setup_lw_transport(tvbuff_t *tvb, packet_info *pinfo, int request_frame, uint16_t psid){
     if (pinfo->fd->visited) {
         return;
     }
-    lw_src_info_t *existing = NULL;
-    if (request_frame != 0)
-        existing = (lw_src_info_t*)wmem_tree_lookup32(lwadv_sources, src_info->psid);
-    if (existing == NULL) {
-        wmem_tree_insert32(lwadv_sources, src_info->psid, (void *)src_info);
-    }
-    else {
-        if (src_info->psnm) existing->psnm = src_info->psnm;
-        if (src_info->fsid) existing->fsid = src_info->fsid;
-        wmem_free(wmem_file_scope(), src_info);
+    lw_src_info_t *src_info = (lw_src_info_t*)wmem_tree_lookup32(lwadv_sources, psid);
+    if (src_info && src_info->fsid && !(src_info->rtp_added)) {
+        // set up an rtp stream here
+        src_info->rtp_added = true;
     }
 }
 static bool validate_header(tvbuff_t* tvb)
@@ -255,7 +250,14 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 decrement_dissection_depth(pinfo);
                 if (info->term_info) info->src_info->term = info->term_info;
                 proto_item_append_text(ti, ": %d", info->src_info->psid);
-                if (info->src_info->psnm) proto_item_append_text(ti, " (%s)", info->src_info->psnm);
+                if (info->src_info->psnm){
+                    proto_item_append_text(ti, " (%s", info->src_info->psnm);
+                    if (info->src_info->term && info->src_info->term->atrn) {
+                        proto_item_append_text(ti, "@%s",info->src_info->term->atrn);
+                    }
+                    proto_item_append_text(ti, ")");
+                } 
+                setup_lw_transport(tvb, pinfo, pinfo->num, info->src_info->psid);
                 return offset + len + 3;
             }
             break;
@@ -312,7 +314,6 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 }
                 else {
                     wmem_tree_insert32(lwadv_sources, info->src_info->psid, (void *)info->src_info);
-                    printf("Added source: %d\r\n", info->src_info->psid);
                 }
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psid);
             }
