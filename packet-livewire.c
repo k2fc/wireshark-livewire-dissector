@@ -345,17 +345,19 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 else {
                     ws_in4_addr console_ip;
                     unsigned fader_num; 
-                    char addr_str[15];
+                    char addr_str[16];
                     proto_tree *busy_tree = proto_item_add_subtree(ti, ett_lwadv);
                     proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_hwid, tvb, offset + 3, 2, ENC_BIG_ENDIAN, &console_ip);
-                    //proto_tree_add_item(tree, hf_lw_busy_prefix, tvb, offset + 7, 2, ENC_BIG_ENDIAN);
                     console_ip += (tvb_get_uint16(tvb, offset + 7, ENC_BIG_ENDIAN) << 16);
                     console_ip = swap_endianness(console_ip);
                     ws_inet_ntop4(&console_ip, addr_str, sizeof(addr_str));
                     proto_tree_add_ipv4(busy_tree, hf_lw_busy_ip, tvb, offset + 7, 2, console_ip);
                     proto_item *fader = proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_fader, tvb, offset + 6, 1, ENC_BIG_ENDIAN, &fader_num);
                     proto_item_set_text(fader, "Fader: %d", fader_num + 1);
-                    proto_item_append_text(ti, ": Console %s, Fader %d", addr_str, fader_num + 1);
+                    lw_term_info_t *console = wmem_tree_lookup32(lwadv_nodes, tvb_get_uint16(tvb, offset + 3, ENC_BIG_ENDIAN));
+                    bool have_name = false;
+                    if (console && console->atrn) have_name = true;
+                    proto_item_append_text(ti, ": Console %s, Fader %d", have_name ? console->atrn : addr_str, fader_num + 1);
                 }
                 return offset + 9;
             }
