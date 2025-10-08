@@ -1,6 +1,7 @@
 #define WS_BUILD_DLL
 #include <wireshark.h>
 #include <epan/packet.h>
+#include <epan/addr_resolv.h>
 #include <math.h>
 
 #ifndef VERSION
@@ -232,6 +233,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 increment_dissection_depth(pinfo);
                 dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM, info);
                 decrement_dissection_depth(pinfo);
+                if (info->term_info->inip && info->term_info->atrn){
+                    add_ipv4_name(info->term_info->inip, info->term_info->atrn, false);
+                }
                 return offset + len + 3;
             }
             else if (msg_type[0] == 'S' &&
