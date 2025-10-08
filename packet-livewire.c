@@ -53,6 +53,9 @@ static int hf_lw_busy_ip;
 
 static int ett_lwadv;
 
+static wmem_tree_t *lwadv_sources;
+static wmem_tree_t *lwadv_nodes;
+
 typedef enum {
     SECTION_BASE,
     SECTION_TERM,
@@ -60,13 +63,21 @@ typedef enum {
 } lw_adv_section_e;
 
 typedef struct {
-    unsigned psid;
+    uint16_t hwid;
+    char* atrn;
+    ws_in4_addr inip;
+    uint16_t udpc;
+} lw_term_info_t;
+typedef struct {
+    uint32_t psid;
     ws_in4_addr fsid;
     char* psnm;
+    lw_term_info_t* term;
 } lw_src_info_t;
 
-typedef union {
-    lw_src_info_t src_info;
+typedef struct {
+    lw_term_info_t *term_info;
+    lw_src_info_t *src_info;
 } lw_info_t;
 
 static dissector_handle_t lwadv_handle;
@@ -91,6 +102,22 @@ static char* get_opcode_description(char* opcode)
     if (strcmp(opcode, "NEST") == 0)
         return "No operation - container for nested messages";
     return 0;
+}
+static void setup_lw_transport(tvbuff_t *tvb, packet_info *pinfo, int request_frame, lw_src_info_t *src_info){
+    if (pinfo->fd->visited) {
+        return;
+    }
+    lw_src_info_t *existing = NULL;
+    if (request_frame != 0)
+        existing = (lw_src_info_t*)wmem_tree_lookup32(lwadv_sources, src_info->psid);
+    if (existing == NULL) {
+        wmem_tree_insert32(lwadv_sources, src_info->psid, (void *)src_info);
+    }
+    else {
+        if (src_info->psnm) existing->psnm = src_info->psnm;
+        if (src_info->fsid) existing->fsid = src_info->fsid;
+        wmem_free(wmem_file_scope(), src_info);
+    }
 }
 static bool validate_header(tvbuff_t* tvb)
 {
@@ -175,6 +202,9 @@ static ws_in4_addr swap_endianness(ws_in4_addr value){
 static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, int offset, lw_adv_section_e section, lw_info_t *info) {
     char* msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII|ENC_NA);
     offset += 4;
+    if (info == NULL) {
+        info = wmem_new0(pinfo->pool, lw_info_t);
+    }
     if (get_opcode_description(msg_type)){
         int msg_count = tvb_get_uint8(tvb, offset + 1);
         proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
@@ -203,8 +233,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 proto_item *ti = proto_tree_add_item(tree, hf_lw_term, tvb, offset - 4, len + 7, ENC_NA);
                 proto_tree *term_tree = proto_item_add_subtree(ti, ett_lwadv);
                 proto_item_set_text(ti, "Terminal Information");
+                info->term_info = wmem_new0(wmem_file_scope(), lw_term_info_t);
                 increment_dissection_depth(pinfo);
-                dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM, NULL);
+                dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM, info);
                 decrement_dissection_depth(pinfo);
                 return offset + len + 3;
             }
@@ -218,33 +249,50 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 proto_item *ti = proto_tree_add_item(tree, hf_lw_src, tvb, offset - 4, len + 7, ENC_NA);
                 proto_tree *source_tree = proto_item_add_subtree(ti, ett_lwadv);
                 proto_item_set_text(ti, "Source %d", src_num);
-                lw_info_t *src_info = wmem_new(pinfo->pool, lw_info_t);
-                src_info->src_info.psnm = "";
+                info->src_info = wmem_new0(wmem_file_scope(), lw_src_info_t);
                 increment_dissection_depth(pinfo);
-                dissect_lwadv_msg(tvb, pinfo, source_tree, offset + 3, SECTION_SOURCE, src_info);
+                dissect_lwadv_msg(tvb, pinfo, source_tree, offset + 3, SECTION_SOURCE, info);
                 decrement_dissection_depth(pinfo);
-                proto_item_append_text(ti, ": %d", src_info->src_info.psid);
-                if (strcmp(src_info->src_info.psnm, "")) proto_item_append_text(ti, " (%s)", src_info->src_info.psnm);
+                if (info->term_info) info->src_info->term = info->term_info;
+                proto_item_append_text(ti, ": %d", info->src_info->psid);
+                if (info->src_info->psnm) proto_item_append_text(ti, " (%s)", info->src_info->psnm);
                 return offset + len + 3;
             }
             break;
         case SECTION_TERM:
             if (strcmp(msg_type,"INIP") == 0){
+                info->term_info->inip = tvb_get_ipv4(tvb, offset + 1);
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_inip);
             }
             else if (strcmp(msg_type,"HWID") == 0){
+                info->term_info->hwid = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                lw_term_info_t *existing = (lw_term_info_t *)wmem_tree_lookup32(lwadv_nodes, info->term_info->hwid);
+                if (existing) {
+                    if (info->term_info->atrn) existing->atrn = info->term_info->atrn;
+                    if (info->term_info->inip) existing->inip = info->term_info->inip;
+                    if (info->term_info->udpc) existing->udpc = info->term_info->udpc;
+                    wmem_free(wmem_file_scope(), info->term_info);
+                    info->term_info = existing;
+                }
+                else {
+                    wmem_tree_insert32(lwadv_nodes, info->term_info->hwid, (void *)info->term_info);
+                }
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_hwid);
             }
             else if (strcmp(msg_type,"ADVV") == 0){
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_advv);
             }
             else if (strcmp(msg_type,"UDPC") == 0){
+                info->term_info->udpc = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_udpc);
             }
             else if (strcmp(msg_type,"NUMS") == 0){
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_nums);
             }
             else if (strcmp(msg_type,"ATRN") == 0){
+                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                char* atrn = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII|ENC_NA);
+                info->term_info->atrn = atrn;
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_atrn);
             }
             else if (strcmp(msg_type,"TYPE") == 0){
@@ -253,19 +301,30 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             break;
         case SECTION_SOURCE:
             if (strcmp(msg_type,"PSID") == 0){
-                unsigned psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
-                info->src_info.psid = psid;
+                info->src_info->psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
+                lw_src_info_t *existing = (lw_src_info_t *)wmem_tree_lookup32(lwadv_sources, info->src_info->psid);
+                if (existing) {
+                    if (info->src_info->psnm) existing->psnm = info->src_info->psnm;
+                    if (info->src_info->term) existing->term = info->src_info->term;
+                    if (info->src_info->fsid) existing->fsid = info->src_info->fsid;
+                    wmem_free(wmem_file_scope(), info->src_info);
+                    info->src_info = existing;
+                }
+                else {
+                    wmem_tree_insert32(lwadv_sources, info->src_info->psid, (void *)info->src_info);
+                    printf("Added source: %d\r\n", info->src_info->psid);
+                }
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psid);
             }
             else if (strcmp(msg_type,"PSNM") == 0){
                 int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                char* psnm = tvb_get_string_enc(pinfo->pool, tvb, offset + 3, str_len, ENC_ASCII|ENC_NA);
-                info->src_info.psnm = psnm;
+                char* psnm = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII|ENC_NA);
+                info->src_info->psnm = psnm;
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psnm);
             }
             else if (strcmp(msg_type,"FSID") == 0){
                 ws_in4_addr fsid = tvb_get_ipv4(tvb, offset + 1);
-                info->src_info.fsid = fsid;
+                info->src_info->fsid = fsid;
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_fsid);
             }
             else if (strcmp(msg_type,"BSID") == 0){
@@ -368,6 +427,9 @@ void proto_register_lwadv(void)
         dissect_lwadv,
         proto_lwadv
     );
+
+    lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
+    lwadv_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
 }
 void proto_reg_handoff_lwadv(void)
 {
