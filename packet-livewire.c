@@ -465,7 +465,8 @@ void proto_register_lwadv(void)
 }
 void proto_reg_handoff_lwadv(void)
 {
-    //dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
+    dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
+    return;
     address adv_address;
     uint32_t ip4_addr;
     str_to_ip(LWADV_ADDR, &ip4_addr);
