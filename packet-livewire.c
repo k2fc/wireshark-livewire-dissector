@@ -2,6 +2,8 @@
 #include <wireshark.h>
 #include <epan/packet.h>
 #include <epan/addr_resolv.h>
+#include <epan/conversation.h>
+#include <epan/dissectors/packet-rtp.h>
 #include <math.h>
 
 #ifndef VERSION
@@ -9,6 +11,8 @@
 #endif
 
 #define LWADV_PORT 4001 
+#define LWADV_ADDR "239.192.255.3"
+#define LWRTP_PORT 5004
 #define AXIA_MAGIC_NUMBER 0x03000207
 
 WS_DLL_PUBLIC_DEF const gchar plugin_version[] = VERSION;
@@ -68,6 +72,7 @@ typedef struct {
     char* atrn;
     ws_in4_addr inip;
     uint16_t udpc;
+    conversation_t *conversation;
 } lw_term_info_t;
 typedef struct {
     uint32_t psid;
@@ -113,6 +118,16 @@ static void setup_lw_transport(tvbuff_t *tvb, packet_info *pinfo, int request_fr
     if (src_info && src_info->fsid && !(src_info->rtp_added)) {
         // set up an rtp stream here
         src_info->rtp_added = true;
+    }
+}
+static void setup_adv_conversation(packet_info *pinfo, lw_term_info_t *term_info) {
+    if (term_info->conversation) return;
+    if (term_info->inip && term_info->udpc){
+        address node_address;
+        alloc_address_wmem(wmem_file_scope(), &node_address, AT_IPv4, sizeof(ws_in4_addr), &term_info->inip);
+        term_info->conversation = conversation_new(pinfo->num, &node_address, NULL, CONVERSATION_UDP, term_info->udpc, 0, NO_ADDR2|NO_PORT2);
+        free_address_wmem(wmem_file_scope(), &node_address);
+        conversation_set_dissector(term_info->conversation, lwadv_handle);
     }
 }
 static bool validate_header(tvbuff_t* tvb)
@@ -235,6 +250,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 decrement_dissection_depth(pinfo);
                 if (info->term_info->inip && info->term_info->atrn){
                     add_ipv4_name(info->term_info->inip, info->term_info->atrn, false);
+                }
+                if (info->term_info->inip && info->term_info->udpc){
+                    setup_adv_conversation(pinfo, info->term_info);
                 }
                 return offset + len + 3;
             }
@@ -440,8 +458,14 @@ void proto_register_lwadv(void)
 }
 void proto_reg_handoff_lwadv(void)
 {
-    dissector_add_uint("udp.port", 4000, lwadv_handle);
-    dissector_add_uint("udp.port", 4001, lwadv_handle);
+    //dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
+    address adv_address;
+    uint32_t ip4_addr;
+    str_to_ip(LWADV_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_file_scope(), &adv_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    conversation_t *conversation = conversation_new(0, &adv_address, NULL, CONVERSATION_UDP, LWADV_PORT, 0, NO_ADDR2|NO_PORT2);
+    free_address_wmem(wmem_file_scope(), &adv_address);
+    conversation_set_dissector(conversation, lwadv_handle);
 }
 void plugin_register(void)
 {
