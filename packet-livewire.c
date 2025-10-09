@@ -117,6 +117,13 @@ static void setup_lw_transport(tvbuff_t *tvb, packet_info *pinfo, int request_fr
     lw_src_info_t *src_info = (lw_src_info_t*)wmem_tree_lookup32(lwadv_sources, psid);
     if (src_info && src_info->fsid && !(src_info->rtp_added)) {
         // set up an rtp stream here
+        address rtp_address;
+        rtp_dyn_payload_t *dyn_payload = rtp_dyn_payload_new();
+        rtp_dyn_payload_insert(dyn_payload, 96, "L24", 48000, 2);
+        alloc_address_wmem(wmem_file_scope(), &rtp_address, AT_IPv4, sizeof(ws_in4_addr), &src_info->fsid);
+        rtp_add_address(pinfo, PT_UDP, &rtp_address, LWRTP_PORT, 0, "Livewire", pinfo->num, RTP_MEDIA_AUDIO, dyn_payload);
+        free_address_wmem(wmem_file_scope(), &rtp_address);
+        rtp_dyn_payload_free(dyn_payload);
         src_info->rtp_added = true;
     }
 }
