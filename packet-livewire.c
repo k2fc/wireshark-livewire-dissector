@@ -11,7 +11,8 @@
 #endif
 
 #define LWADV_PORT 4001 
-#define LWADV_ADDR "239.192.255.3"
+#define LWGPIO_CONSOLE_PORT 2060 
+#define LWGPIO_NODE_PORT 2055 
 #define LWRTP_PORT 5004
 #define AXIA_MAGIC_NUMBER 0x03000207
 
@@ -629,16 +630,16 @@ void proto_register_lwadv(void)
 void proto_reg_handoff_lwadv(void)
 {
     dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
-    dissector_add_uint_with_preference("udp.port", 2055, lwgpio_handle);
-    dissector_add_uint_with_preference("udp.port", 2060, lwgpio_handle);
+    dissector_add_uint_with_preference("udp.port", LWGPIO_CONSOLE_PORT, lwgpio_handle);
+    dissector_add_uint_with_preference("udp.port", LWGPIO_NODE_PORT, lwgpio_handle);
     return;
-    address adv_address;
+    /*address adv_address;
     uint32_t ip4_addr;
     str_to_ip(LWADV_ADDR, &ip4_addr);
     alloc_address_wmem(wmem_file_scope(), &adv_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
     conversation_t *conversation = conversation_new(0, &adv_address, NULL, CONVERSATION_UDP, LWADV_PORT, 0, NO_ADDR2|NO_PORT2);
     free_address_wmem(wmem_file_scope(), &adv_address);
-    conversation_set_dissector(conversation, lwadv_handle);
+    conversation_set_dissector(conversation, lwadv_handle);*/
 }
 void plugin_register(void)
 {
