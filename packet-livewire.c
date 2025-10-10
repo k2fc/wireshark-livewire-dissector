@@ -559,56 +559,56 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 void proto_register_lwadv(void)
 {
     static hf_register_info hf[] = {
-        { &hf_lw_seq,           { "Sequence",               "axia.adv.seq",                FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_msg_count,     { "Nested message count",   "axia.adv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_pver,          { "Protocol Version",       "axia.adv.pver",               FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_advt,          { "Advertisement type",     "axia.adv.advt",               FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u8,        { "Unknown Byte",           "axia.adv.unknown",            FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u16,       { "Unknown Int",            "axia.adv.unknown",            FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u32,       { "Unknown Int",            "axia.adv.unknown",            FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_data,      { "Unknown Data",           "axia.adv.unknown",            FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
-        { &hf_lw_unk_str,       { "Unknown String",         "axia.adv.unknown",            FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_opcode,        { "Operation",              "axia.adv.opcode",             FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_seq,           { "Sequence",               "axia_adv.seq",                FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_msg_count,     { "Nested message count",   "axia_adv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_pver,          { "Protocol Version",       "axia_adv.pver",               FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_advt,          { "Advertisement type",     "axia_adv.advt",               FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u8,        { "Unknown Byte",           "axia_adv.unknown",            FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u16,       { "Unknown Int",            "axia_adv.unknown",            FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u32,       { "Unknown Int",            "axia_adv.unknown",            FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_data,      { "Unknown Data",           "axia_adv.unknown",            FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
+        { &hf_lw_unk_str,       { "Unknown String",         "axia_adv.unknown",            FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_opcode,        { "Operation",              "axia_adv.opcode",             FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_term,          { "Terminal Information",   "axia.adv.term",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_inip,     { "IP Address",             "axia.adv.term.inip",          FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_hwid,     { "Hardware ID",            "axia.adv.term.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_advv,     { "Advertisement Version",  "axia.adv.term.advv",          FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_udpc,     { "UDP Port",               "axia.adv.term.udpc",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_nums,     { "Number of Sources",      "axia.adv.term.nums",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_atrn,     { "Terminal Name",          "axia.adv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_type,     { "Type",                   "axia.adv.term.type",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term,          { "Terminal Information",   "axia_adv.term",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_inip,     { "IP Address",             "axia_adv.term.inip",          FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_hwid,     { "Hardware ID",            "axia_adv.term.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_advv,     { "Advertisement Version",  "axia_adv.term.advv",          FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_udpc,     { "UDP Port",               "axia_adv.term.udpc",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_nums,     { "Number of Sources",      "axia_adv.term.nums",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_atrn,     { "Terminal Name",          "axia_adv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_type,     { "Type",                   "axia_adv.term.type",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_src,           { "Source Information",     "axia.adv.src",                FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psid,      { "Livewire Source ID",     "axia.adv.src.psid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_shab,      { "Sharable",               "axia.adv.src.shab",           FT_BOOLEAN, BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_fsid,      { "Multicast address",      "axia.adv.src.fsid",           FT_IPv4,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_bsid,      { "Backfeed address",       "axia.adv.src.bsid",           FT_IPv4,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psnm,      { "Name",                   "axia.adv.src.psnm",           FT_STRING,  BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_lpid,      { "Logic Port ID",          "axia.adv.src.lpid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_setup_frm, { "Setup Frame",            "axia.adv.src.setup-frame",    FT_FRAMENUM,BASE_NONE,   NULL,               0x0,    "First frame that advertised this source",   HFILL } },
-        { &hf_lw_src_is_mm,     { "Is Backfeed",            "axia.adv.src.is-backfeed",    FT_BOOLEAN, BASE_NONE,   NULL,               0x0,    "Is this source a backfeed from a console?",   HFILL } },
+        { &hf_lw_src,           { "Source Information",     "axia_adv.src",                FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psid,      { "Livewire Source ID",     "axia_adv.src.psid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_shab,      { "Sharable",               "axia_adv.src.shab",           FT_BOOLEAN, BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_fsid,      { "Multicast address",      "axia_adv.src.fsid",           FT_IPv4,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_bsid,      { "Backfeed address",       "axia_adv.src.bsid",           FT_IPv4,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psnm,      { "Name",                   "axia_adv.src.psnm",           FT_STRING,  BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_lpid,      { "Logic Port ID",          "axia_adv.src.lpid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_setup_frm, { "Setup Frame",            "axia_adv.src.setup-frame",    FT_FRAMENUM,BASE_NONE,   NULL,               0x0,    "First frame that advertised this source",   HFILL } },
+        { &hf_lw_src_is_mm,     { "Is Backfeed",            "axia_adv.src.is-backfeed",    FT_BOOLEAN, BASE_NONE,   NULL,               0x0,    "Is this source a backfeed from a console?",   HFILL } },
 
-        { &hf_lw_busy,          { "Source Allocation",      "axia.adv.busy",               FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_hwid,     { "Console HWID",           "axia.adv.busy.hwid",          FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_fader,    { "Fader",                  "axia.adv.busy.fader",         FT_UINT8,   BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_ip,       { "Console IP Address",     "axia.adv.busy.ip",            FT_IPv4,    BASE_NONE,   NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
-        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia.adv.busy.prefix",        FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy,          { "Source Allocation",      "axia_adv.busy",               FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_hwid,     { "Console HWID",           "axia_adv.busy.hwid",          FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_fader,    { "Fader",                  "axia_adv.busy.fader",         FT_UINT8,   BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_ip,       { "Console IP Address",     "axia_adv.busy.ip",            FT_IPv4,    BASE_NONE,   NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
+        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia_adv.busy.prefix",        FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_gpio,          { "GPIO Message",           "axia.gpio",               FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
-        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia.gpio.lcid",          FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
-        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia.gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
-        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia.gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
-        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia.gpio.pulse_len_mult",FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
-        { &hf_lw_gpio_plen,     { "Pulse length",           "axia.gpio.pulse_len",     FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
+        { &hf_lw_gpio,          { "GPIO Message",           "axia_gpio",               FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
+        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia_gpio.lcid",          FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
+        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia_gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
+        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia_gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
+        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia_gpio.pulse_len_mult",FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
+        { &hf_lw_gpio_plen,     { "Pulse length",           "axia_gpio.pulse_len",     FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
     };
 
     static int *ett[] = {
         &ett_lwadv
     };
     
-    proto_lwadv = proto_register_protocol("Livewire Advertisement", "LW-ADV", "axia.adv");
-    proto_lwgpio = proto_register_protocol("Livewire GPIO", "LW-GPIO", "axia.gpio");
+    proto_lwadv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA-ADV", "axia_adv");
+    proto_lwgpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA-GPIO", "axia_gpio");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     lwadv_handle = register_dissector_with_description(
