@@ -51,6 +51,8 @@ static int hf_lw_src_fsid;
 static int hf_lw_src_bsid;
 static int hf_lw_src_psnm;
 static int hf_lw_src_lpid;
+static int hf_lw_src_setup_frm;
+static int hf_lw_src_is_mm;
 
 static int hf_lw_busy;
 static int hf_lw_busy_hwid;
@@ -87,9 +89,11 @@ typedef struct {
 typedef struct {
     uint32_t psid;
     ws_in4_addr fsid;
+    ws_in4_addr bsid;
     char* psnm;
     lw_term_info_t* term;
     ws_in4_addr rtp_added;
+    uint32_t setup_frame;
 } lw_src_info_t;
 
 typedef struct {
@@ -180,6 +184,27 @@ static bool validate_header(tvbuff_t* tvb)
         }
     }
     return true;
+}
+static void write_src_info(lw_info_t* info){
+    bool is_backfeed = info->src_info->fsid && info->src_info->bsid &&
+        info->src_info->fsid == info->src_info->bsid;
+    if (is_backfeed) {
+        info->src_info->psid = (uint32_t)(0 - (int32_t)info->src_info->psid);
+    }
+    lw_src_info_t *existing = (lw_src_info_t *)wmem_tree_lookup32(lwadv_sources, info->src_info->psid);
+    if (existing) {
+        if (info->src_info->fsid) existing->fsid = info->src_info->fsid;
+        if (info->src_info->bsid) existing->bsid = info->src_info->bsid;
+        if (info->src_info->psnm) existing->psnm = info->src_info->psnm;
+        if (info->src_info->term) existing->term = info->src_info->term;
+        if (info->src_info->rtp_added) existing->rtp_added = info->src_info->rtp_added;
+        if (info->src_info->setup_frame) existing->setup_frame = info->src_info->setup_frame;
+        wmem_free(wmem_file_scope(), info->src_info);
+        info->src_info = existing;
+    }
+    else {
+        wmem_tree_insert32(lwadv_sources, info->src_info->psid, (void *)info->src_info);
+    }
 }
 static int tree_add_value(proto_tree *tree, tvbuff_t* tvb, int offset, int hf)
 {
@@ -304,12 +329,23 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 decrement_dissection_depth(pinfo);
                 if (info->term_info) info->src_info->term = info->term_info;
                 proto_item_append_text(ti, ": %d", info->src_info->psid);
+                write_src_info(info);
                 if (info->src_info->psnm){
                     proto_item_append_text(ti, " [%s", info->src_info->psnm);
                     if (info->src_info->term && info->src_info->term->atrn) {
                         proto_item_append_text(ti, "@%s",info->src_info->term->atrn);
                     }
                     proto_item_append_text(ti, "]");
+                    if (!info->src_info->setup_frame) info->src_info->setup_frame = pinfo->num;
+                    else if (info->src_info->setup_frame != pinfo->num) {
+                        ti = proto_tree_add_uint(source_tree, hf_lw_src_setup_frm, tvb, 0, 0, info->src_info->setup_frame);
+                        proto_item_set_generated(ti);
+                    }
+                    if (info->src_info->fsid && info->src_info->bsid){
+                        ti = proto_tree_add_boolean(source_tree, hf_lw_src_is_mm, 
+                            tvb, 0, 0, info->src_info->bsid == info->src_info->fsid);
+                        proto_item_set_generated(ti);
+                    }
                 } 
                 setup_lw_transport(pinfo, info->src_info->psid);
                 return offset + len + 3;
@@ -360,6 +396,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             ws_assert(msg_type);
             if (strcmp(msg_type,"PSID") == 0){
                 info->src_info->psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
+                /*
                 lw_src_info_t *existing = (lw_src_info_t *)wmem_tree_lookup32(lwadv_sources, info->src_info->psid);
                 if (existing) {
                     if (info->src_info->psnm) existing->psnm = info->src_info->psnm;
@@ -371,6 +408,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 else {
                     wmem_tree_insert32(lwadv_sources, info->src_info->psid, (void *)info->src_info);
                 }
+                */
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psid);
             }
             else if (strcmp(msg_type,"PSNM") == 0){
@@ -385,6 +423,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_fsid);
             }
             else if (strcmp(msg_type,"BSID") == 0){
+                info->src_info->bsid = tvb_get_ipv4(tvb, offset + 1);
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_src_bsid);
             }
             else if (strcmp(msg_type,"SHAB") == 0){
@@ -440,8 +479,12 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             lw_src_info_t *source = wmem_tree_lookup32(lwadv_sources, lpid);
             lw_term_info_t *term;
             if (source) term = source->term;
-            if (source && source->psnm && term && term->atrn)
+            if (source && source->psnm && term && term->atrn){
                 proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
+                proto_tree *setup_tree = proto_item_add_subtree(lpid_item, ett_lwadv);
+                proto_item *setup_frm = proto_tree_add_uint(setup_tree, hf_lw_src_setup_frm, tvb, 0, 0, source->setup_frame);
+                proto_item_set_generated(setup_frm);
+            }
             proto_item *lcid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
             if (lcid < 9) lcid = 9-lcid;
             else {
@@ -535,19 +578,21 @@ void proto_register_lwadv(void)
         { &hf_lw_term_atrn,     { "Terminal Name",          "axia.adv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_term_type,     { "Type",                   "axia.adv.term.type",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_src,           { "Source Information",     "axia.adv.src",                FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psid,      { "Livewire Source ID",     "axia.adv.src.psid",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_shab,      { "Sharable",               "axia.adv.src.shab",           FT_BOOLEAN, 0,          NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_fsid,      { "Multicast address",      "axia.adv.src.fsid",           FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_bsid,      { "Backfeed address",       "axia.adv.src.bsid",           FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psnm,      { "Name",                   "axia.adv.src.psnm",           FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_lpid,      { "Logic Port ID",          "axia.adv.src.lpid",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src,           { "Source Information",     "axia.adv.src",                FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psid,      { "Livewire Source ID",     "axia.adv.src.psid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_shab,      { "Sharable",               "axia.adv.src.shab",           FT_BOOLEAN, BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_fsid,      { "Multicast address",      "axia.adv.src.fsid",           FT_IPv4,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_bsid,      { "Backfeed address",       "axia.adv.src.bsid",           FT_IPv4,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psnm,      { "Name",                   "axia.adv.src.psnm",           FT_STRING,  BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_lpid,      { "Logic Port ID",          "axia.adv.src.lpid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_setup_frm, { "Setup Frame",            "axia.adv.src.setup-frame",    FT_FRAMENUM,BASE_NONE,   NULL,               0x0,    "First frame that advertised this source",   HFILL } },
+        { &hf_lw_src_is_mm,     { "Is Backfeed",            "axia.adv.src.is-backfeed",    FT_BOOLEAN, BASE_NONE,   NULL,               0x0,    "Is this source a backfeed from a console?",   HFILL } },
 
-        { &hf_lw_busy,          { "Source Allocation",      "axia.adv.busy",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_hwid,     { "Console HWID",           "axia.adv.busy.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_fader,    { "Fader",                  "axia.adv.busy.fader",         FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_ip,       { "Console IP Address",     "axia.adv.busy.ip",            FT_IPv4,    BASE_NONE,  NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
-        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia.adv.busy.prefix",        FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy,          { "Source Allocation",      "axia.adv.busy",               FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_hwid,     { "Console HWID",           "axia.adv.busy.hwid",          FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_fader,    { "Fader",                  "axia.adv.busy.fader",         FT_UINT8,   BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_ip,       { "Console IP Address",     "axia.adv.busy.ip",            FT_IPv4,    BASE_NONE,   NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
+        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia.adv.busy.prefix",        FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
 
         { &hf_lw_gpio,          { "GPIO Message",           "axia.gpio",               FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
         { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia.gpio.lcid",          FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
