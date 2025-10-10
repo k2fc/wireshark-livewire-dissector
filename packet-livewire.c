@@ -110,7 +110,7 @@ static char* get_opcode_description(char* opcode)
         return "No operation - container for nested messages";
     return 0;
 }
-static void setup_lw_transport(tvbuff_t *tvb, packet_info *pinfo, int request_frame, uint16_t psid){
+static void setup_lw_transport(packet_info *pinfo, uint16_t psid){
     if (pinfo->fd->visited) {
         return;
     }
@@ -286,7 +286,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                     }
                     proto_item_append_text(ti, ")");
                 } 
-                setup_lw_transport(tvb, pinfo, pinfo->num, info->src_info->psid);
+                setup_lw_transport(pinfo, info->src_info->psid);
                 return offset + len + 3;
             }
             break;
