@@ -22,6 +22,7 @@ WS_DLL_PUBLIC_DEF const int plugin_want_minor = WIRESHARK_VERSION_MINOR;
 WS_DLL_PUBLIC void plugin_register(void);
 
 static int proto_lwadv = -1;
+static int proto_lwgpio = -1;
 
 static int hf_lw_seq;
 static int hf_lw_opcode;
@@ -56,15 +57,22 @@ static int hf_lw_busy_hwid;
 static int hf_lw_busy_fader;
 static int hf_lw_busy_ip;
 
+static int hf_lw_gpio_lcid;
+static int hf_lw_gpio_state;
+static int hf_lw_gpio_state2;
+static int hf_lw_gpio_pmult;
+static int hf_lw_gpio_plen;
+
 static int ett_lwadv;
 
 static wmem_tree_t *lwadv_sources;
 static wmem_tree_t *lwadv_nodes;
 
 typedef enum {
-    SECTION_BASE,
+    SECTION_ADV_BASE,
     SECTION_TERM,
     SECTION_SOURCE,
+    SECTION_GPIO,
 } lw_adv_section_e;
 
 typedef struct {
@@ -85,9 +93,11 @@ typedef struct {
 typedef struct {
     lw_term_info_t *term_info;
     lw_src_info_t *src_info;
+    int16_t lpid;
 } lw_info_t;
 
 static dissector_handle_t lwadv_handle;
+static dissector_handle_t lwgpio_handle;
 static const value_string advtypenames[] = {
     { 0x1, "Livewire source advertisement" },
     { 0x2, "Livewire node advertisement" },
@@ -98,7 +108,7 @@ static char* get_opcode_description(char* opcode)
 {
     if (strcmp(opcode,"INDI") == 0)
         return "Value Indication";
-    if (strcmp(opcode, "WNRI") == 0)
+    if (strcmp(opcode, "WRNI") == 0)
         return "Write value - returning the value indication is not requested";
     if (strcmp(opcode, "WRIN") == 0)
         return "Write value - returning the value indication is requested";
@@ -218,26 +228,30 @@ static ws_in4_addr swap_endianness(ws_in4_addr value){
             ((value & 0xFF000000) >> 24);
 }
 static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, int offset, lw_adv_section_e section, lw_info_t *info) {
-    char* msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII|ENC_NA);
-    offset += 4;
-    if (info == NULL) {
-        info = wmem_new0(pinfo->pool, lw_info_t);
-    }
-    if (get_opcode_description(msg_type)){
-        int msg_count = tvb_get_uint8(tvb, offset + 1);
-        proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
-        //proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
-        proto_item_append_text(ti, " (%s)", get_opcode_description(msg_type));
-        offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
-        for (int i = 0; i < msg_count; i++) {
-            increment_dissection_depth(pinfo);
-            offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
-            decrement_dissection_depth(pinfo);
+    char* msg_type;
+    if (info == NULL || section != SECTION_GPIO) {
+        msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII|ENC_NA);
+        offset += 4;
+        if (info == NULL) {
+            info = wmem_new0(pinfo->pool, lw_info_t);
         }
-        return offset;
+        if (get_opcode_description(msg_type)){
+            int msg_count = tvb_get_uint8(tvb, offset + 1);
+            proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
+            //proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
+            proto_item_append_text(ti, " [%s]", get_opcode_description(msg_type));
+            offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
+            for (int i = 0; i < msg_count; i++) {
+                increment_dissection_depth(pinfo);
+                offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
+                decrement_dissection_depth(pinfo);
+            }
+            return offset;
+        }
     }
     switch (section) {
-        case SECTION_BASE:
+        case SECTION_ADV_BASE:
+            ws_assert(msg_type);
             if (strcmp(msg_type,"PVER") == 0){
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_pver);
             }
@@ -280,17 +294,18 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 if (info->term_info) info->src_info->term = info->term_info;
                 proto_item_append_text(ti, ": %d", info->src_info->psid);
                 if (info->src_info->psnm){
-                    proto_item_append_text(ti, " (%s", info->src_info->psnm);
+                    proto_item_append_text(ti, " [%s", info->src_info->psnm);
                     if (info->src_info->term && info->src_info->term->atrn) {
                         proto_item_append_text(ti, "@%s",info->src_info->term->atrn);
                     }
-                    proto_item_append_text(ti, ")");
+                    proto_item_append_text(ti, "]");
                 } 
                 setup_lw_transport(pinfo, info->src_info->psid);
                 return offset + len + 3;
             }
             break;
         case SECTION_TERM:
+            ws_assert(msg_type);
             if (strcmp(msg_type,"INIP") == 0){
                 info->term_info->inip = tvb_get_ipv4(tvb, offset + 1);
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_inip);
@@ -331,6 +346,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             }
             break;
         case SECTION_SOURCE:
+            ws_assert(msg_type);
             if (strcmp(msg_type,"PSID") == 0){
                 info->src_info->psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
                 lw_src_info_t *existing = (lw_src_info_t *)wmem_tree_lookup32(lwadv_sources, info->src_info->psid);
@@ -392,6 +408,47 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 return offset + 9;
             }
             break;
+        case SECTION_GPIO:
+            uint32_t lpid;
+            uint32_t lcid;
+            uint32_t state;
+            uint32_t mult;
+            uint32_t len;
+            bool gpi = false;
+            proto_item *lpid_item = proto_tree_add_item_ret_uint(tree, hf_lw_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
+            if (lpid != 0xFF) info->lpid = lpid;
+            else lpid = info->lpid;
+            lw_src_info_t *source = wmem_tree_lookup32(lwadv_sources, lpid);
+            lw_term_info_t *term;
+            if (source) term = source->term;
+            if (source && term) proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
+            proto_item *lcid_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
+            if (lcid < 9) lcid = 9-lcid;
+            else {
+                lcid = 14-lcid;
+                gpi = true;
+            }
+            proto_item_append_text (lcid_item, gpi ? " [GPI Pin %d]" :  " [GPO Pin %d]", lcid);
+            proto_item *pmult_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
+            proto_item *state_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+            proto_item *plen_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
+            len *= mult ? 20 : 500;
+            if (!state && !mult && !len) {
+                proto_item_append_text(state_item, " [Ignored]");
+                state_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+            }
+            proto_item_append_text (state_item, " [%s]", state ? "Low" : "High");
+            proto_item_append_text (pmult_item, " [%s]", mult ? "20 mS" : "500 mS");
+            if (len) proto_item_append_text(plen_item, " [%d mS]", len);
+            col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
+            if (source && term) col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
+            col_append_fstr(pinfo->cinfo, COL_INFO, "LCID=%s %d State=", gpi ? "GPI" : "GPO", lcid);
+            if (len) col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
+            col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", state? "Low" : "High");
+            if (len) col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
+            return offset + 6;
+            break;
+
     }
     return offset + dissect_lwadv_unk(tvb, pinfo, tree, offset);
 }
@@ -406,44 +463,64 @@ static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, vo
     proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
     proto_tree_add_item(lwadv_tree, hf_lw_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
     int offset = 16;
-    dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_BASE, NULL);
+    dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_ADV_BASE, NULL);
+    return offset;
+}
+static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+    if (!validate_header(tvb)) /* This is not an Axia packet */ 
+        return 0;
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-GPIO");
+    col_clear(pinfo->cinfo,COL_INFO);
+
+    proto_item *ti = proto_tree_add_item(tree, proto_lwgpio, tvb, 0, -1, ENC_NA);
+    proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree_add_item(lwadv_tree, hf_lw_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
+    int offset = 16;
+    dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_GPIO, NULL);
     return offset;
 }
 void proto_register_lwadv(void)
 {
     static hf_register_info hf[] = {
-        { &hf_lw_seq,       { "Sequence",               "lwadv.seq",        FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_msg_count, { "Nested message count",   "lwadv.msgcount",   FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_pver,      { "Protocol Version",       "lwadv.pver",       FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_advt,      { "Advertisement type",     "lwadv.advt",       FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u8,    { "Unknown Byte",           "lwadv.unknown",    FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u16,   { "Unknown Int",            "lwadv.unknown",    FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u32,   { "Unknown Int",            "lwadv.unknown",    FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_data,  { "Unknown Data",           "lwadv.unknown",    FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
-        { &hf_lw_unk_str,   { "Unknown String",         "lwadv.unknown",    FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_opcode,    { "Operation",              "lwadv.opcode",     FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_seq,           { "Sequence",               "lwadv.seq",        FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_msg_count,     { "Nested message count",   "lwadv.msgcount",   FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_pver,          { "Protocol Version",       "lwadv.pver",       FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_advt,          { "Advertisement type",     "lwadv.advt",       FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u8,        { "Unknown Byte",           "lwadv.unknown",    FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u16,       { "Unknown Int",            "lwadv.unknown",    FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u32,       { "Unknown Int",            "lwadv.unknown",    FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_data,      { "Unknown Data",           "lwadv.unknown",    FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
+        { &hf_lw_unk_str,       { "Unknown String",         "lwadv.unknown",    FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_opcode,        { "Operation",              "lwadv.opcode",     FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_term,      { "Terminal Information",   "lwadv.term",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_inip, { "IP Address",             "lwadv.term.inip",  FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_hwid, { "Hardware ID",            "lwadv.term.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_advv, { "Advertisement Version",  "lwadv.term.advv",  FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_udpc, { "UDP Port",               "lwadv.term.udpc",  FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_nums, { "Number of Sources",      "lwadv.term.nums",  FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_atrn, { "Terminal Name",          "lwadv.term.atrn",  FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_type, { "Type",                   "lwadv.term.type",  FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term,          { "Terminal Information",   "lwadv.term",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_inip,     { "IP Address",             "lwadv.term.inip",  FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_hwid,     { "Hardware ID",            "lwadv.term.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_advv,     { "Advertisement Version",  "lwadv.term.advv",  FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_udpc,     { "UDP Port",               "lwadv.term.udpc",  FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_nums,     { "Number of Sources",      "lwadv.term.nums",  FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_atrn,     { "Terminal Name",          "lwadv.term.atrn",  FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_type,     { "Type",                   "lwadv.term.type",  FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_src,       { "Source Information",     "lwadv.src",        FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psid,  { "Livewire Source ID",     "lwadv.src.psid",   FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_shab,  { "Sharable",               "lwadv.src.shab",   FT_BOOLEAN, 0,          NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_fsid,  { "Multicast address",      "lwadv.src.fsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_bsid,  { "Backfeed address",       "lwadv.src.bsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psnm,  { "Name",                   "lwadv.src.psnm",   FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_lpid,  { "Logic Port ID",          "lwadv.src.lpid",   FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src,           { "Source Information",     "lwadv.src",        FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psid,      { "Livewire Source ID",     "lwadv.src.psid",   FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_shab,      { "Sharable",               "lwadv.src.shab",   FT_BOOLEAN, 0,          NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_fsid,      { "Multicast address",      "lwadv.src.fsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_bsid,      { "Backfeed address",       "lwadv.src.bsid",   FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psnm,      { "Name",                   "lwadv.src.psnm",   FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_lpid,      { "Logic Port ID",          "lwadv.src.lpid",   FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_busy,      { "Source Allocation",      "lwadv.busy",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_hwid, { "Console HWID",           "lwadv.busy.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_fader,{ "Fader",                  "lwadv.busy.fader", FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_ip,   { "Console IP Address",     "lwadv.busy.ip",    FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy,          { "Source Allocation",      "lwadv.busy",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_hwid,     { "Console HWID",           "lwadv.busy.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_fader,    { "Fader",                  "lwadv.busy.fader", FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_ip,       { "Console IP Address",     "lwadv.busy.ip",    FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+
+        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "lwadv.gpio.lcid",  FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
+        { &hf_lw_gpio_state,    { "Logic Circuit State",    "lwadv.gpio.state", FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
+        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "lwadv.gpio.state", FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
+        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "lwadv.gpio.pulse_len_mult",FT_UINT8,   BASE_DEC,   NULL,       0x80,   NULL,   HFILL } },
+        { &hf_lw_gpio_plen,     { "Pulse length",           "lwadv.gpio.pulse_len",FT_UINT8,   BASE_DEC,   NULL,            0x3E,   NULL,   HFILL } },
     };
 
     static int *ett[] = {
@@ -451,13 +528,20 @@ void proto_register_lwadv(void)
     };
     
     proto_lwadv = proto_register_protocol("Livewire Advertisement", "LW-ADV", "lwadv");
+    proto_lwgpio = proto_register_protocol("Livewire GPIO", "LW-GPIO", "lwgpio");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     lwadv_handle = register_dissector_with_description(
-        "livewire",
+        "livewire-adv",
         "Axia Livewire Source Advertisement Protocol",
         dissect_lwadv,
         proto_lwadv
+    );
+    lwgpio_handle = register_dissector_with_description(
+        "livewire-gpio",
+        "Axia Livewire GPIO Protocol",
+        dissect_lwgpio,
+        proto_lwgpio
     );
 
     lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
@@ -466,6 +550,8 @@ void proto_register_lwadv(void)
 void proto_reg_handoff_lwadv(void)
 {
     dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
+    dissector_add_uint_with_preference("udp.port", 2055, lwgpio_handle);
+    dissector_add_uint_with_preference("udp.port", 2060, lwgpio_handle);
     return;
     address adv_address;
     uint32_t ip4_addr;
