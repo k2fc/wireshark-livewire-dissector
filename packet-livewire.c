@@ -56,6 +56,7 @@ static int hf_lw_busy;
 static int hf_lw_busy_hwid;
 static int hf_lw_busy_fader;
 static int hf_lw_busy_ip;
+static int hf_lw_busy_prefix;
 
 static int hf_lw_gpio_lcid;
 static int hf_lw_gpio_state;
@@ -221,12 +222,6 @@ static int dissect_lwadv_unk(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree
     proto_item_append_text(ti, " (%s)", msg_type);
     return len;
 }
-static ws_in4_addr swap_endianness(ws_in4_addr value){
-    return ((value & 0x000000FF) << 24) |
-            ((value & 0x0000FF00) << 8) |
-            ((value & 0x00FF0000) >> 8) |
-            ((value & 0xFF000000) >> 24);
-}
 static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, int offset, lw_adv_section_e section, lw_info_t *info) {
     char* msg_type;
     if (info == NULL || section != SECTION_GPIO) {
@@ -390,20 +385,22 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 }
                 else {
                     ws_in4_addr console_ip;
+                    uint32_t prefix;
+                    uint32_t hwid;
                     unsigned fader_num; 
                     char addr_str[16];
                     proto_tree *busy_tree = proto_item_add_subtree(ti, ett_lwadv);
-                    proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_hwid, tvb, offset + 3, 2, ENC_BIG_ENDIAN, &console_ip);
-                    console_ip += (tvb_get_uint16(tvb, offset + 7, ENC_BIG_ENDIAN) << 16);
-                    console_ip = swap_endianness(console_ip);
+                    proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_hwid, tvb, offset + 3, 2, ENC_BIG_ENDIAN, &hwid);
+                    proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_prefix, tvb, offset + 7, 2, ENC_BIG_ENDIAN, &prefix);
+                    console_ip = (ws_in4_addr)((g_htonl(prefix) >> 16) + g_htonl(hwid)); 
                     ws_inet_ntop4(&console_ip, addr_str, sizeof(addr_str));
-                    proto_tree_add_ipv4(busy_tree, hf_lw_busy_ip, tvb, offset + 7, 2, console_ip);
+                    proto_tree_add_ipv4(busy_tree, hf_lw_busy_ip, tvb, offset + 3, 6, console_ip);
                     proto_item *fader = proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_fader, tvb, offset + 6, 1, ENC_BIG_ENDIAN, &fader_num);
                     proto_item_set_text(fader, "Fader: %d", fader_num + 1);
                     lw_term_info_t *console = wmem_tree_lookup32(lwadv_nodes, tvb_get_uint16(tvb, offset + 3, ENC_BIG_ENDIAN));
                     bool have_name = false;
                     if (console && console->atrn) have_name = true;
-                    proto_item_append_text(ti, ": Console %s, Fader %d", have_name ? console->atrn : addr_str, fader_num + 1);
+                    proto_item_append_text(ti, " [Console %s, Fader %d]", have_name ? console->atrn : addr_str, fader_num + 1);
                 }
                 return offset + 9;
             }
@@ -514,7 +511,8 @@ void proto_register_lwadv(void)
         { &hf_lw_busy,          { "Source Allocation",      "lwadv.busy",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_busy_hwid,     { "Console HWID",           "lwadv.busy.hwid",  FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_busy_fader,    { "Fader",                  "lwadv.busy.fader", FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_ip,       { "Console IP Address",     "lwadv.busy.ip",    FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_ip,       { "Console IP Address",     "lwadv.busy.ip",    FT_IPv4,    BASE_NONE,  NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
+        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "lwadv.busy.prefix",FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
 
         { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "lwadv.gpio.lcid",  FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
         { &hf_lw_gpio_state,    { "Logic Circuit State",    "lwadv.gpio.state", FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
