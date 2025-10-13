@@ -418,7 +418,8 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             lw_src_info_t *source = wmem_tree_lookup32(lwadv_sources, lpid);
             lw_term_info_t *term;
             if (source) term = source->term;
-            if (source && term) proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
+            if (source && source->psnm && term && term->atrn)
+                proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
             proto_item *lcid_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
             if (lcid < 9) lcid = 9-lcid;
             else {
@@ -438,8 +439,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             proto_item_append_text (pmult_item, " [%s]", mult ? "20 mS" : "500 mS");
             if (len) proto_item_append_text(plen_item, " [%d mS]", len);
             col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
-            if (source && term) col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
-            col_append_fstr(pinfo->cinfo, COL_INFO, "LCID=%s %d State=", gpi ? "GPI" : "GPO", lcid);
+            if (source && source->psnm && term && term->atrn) 
+                col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
+            col_append_fstr(pinfo->cinfo, COL_INFO, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
             if (len) col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
             col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", state? "Low" : "High");
             if (len) col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
