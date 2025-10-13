@@ -107,6 +107,8 @@ static const value_string advtypenames[] = {
 };
 static char* get_opcode_description(char* opcode)
 {
+    if (!opcode) return 0;
+    if (!opcode[0]) return 0;
     if (strcmp(opcode,"INDI") == 0)
         return "Value Indication";
     if (strcmp(opcode, "WRNI") == 0)
@@ -224,26 +226,24 @@ static int dissect_lwadv_unk(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree
 }
 static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, int offset, lw_adv_section_e section, lw_info_t *info) {
     char* msg_type;
-    if (info == NULL || section != SECTION_GPIO) {
-        msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII|ENC_NA);
-        offset += 4;
-        if (info == NULL) {
-            info = wmem_new0(pinfo->pool, lw_info_t);
-        }
-        if (get_opcode_description(msg_type)){
-            int msg_count = tvb_get_uint8(tvb, offset + 1);
-            proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
-            //proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
-            proto_item_append_text(ti, " [%s]", get_opcode_description(msg_type));
-            offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
-            for (int i = 0; i < msg_count; i++) {
-                increment_dissection_depth(pinfo);
-                offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
-                decrement_dissection_depth(pinfo);
-            }
-            return offset;
-        }
+    msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII|ENC_NA);
+    offset += 4;
+    if (info == NULL) {
+        info = wmem_new0(pinfo->pool, lw_info_t);
     }
+    if (get_opcode_description(msg_type)){
+        int msg_count = tvb_get_uint8(tvb, offset + 1);
+        proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
+        //proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
+        proto_item_append_text(ti, " [%s]", get_opcode_description(msg_type));
+        offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
+        for (int i = 0; i < msg_count; i++) {
+            increment_dissection_depth(pinfo);
+            offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
+            decrement_dissection_depth(pinfo);
+        }
+        return offset;
+    } else if (section == SECTION_GPIO) offset -= 4;
     switch (section) {
         case SECTION_ADV_BASE:
             ws_assert(msg_type);
