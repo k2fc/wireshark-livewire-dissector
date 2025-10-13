@@ -134,6 +134,7 @@ static void setup_lw_transport(packet_info *pinfo, uint16_t psid){
         address rtp_address;
         rtp_dyn_payload_t *dyn_payload = rtp_dyn_payload_new();
         rtp_dyn_payload_insert(dyn_payload, 96, "L24", 48000, 2);
+        rtp_dyn_payload_insert(dyn_payload, 99, "L24", 48000, 8);
         alloc_address_wmem(wmem_file_scope(), &rtp_address, AT_IPv4, sizeof(ws_in4_addr), &src_info->fsid);
         rtp_add_address(pinfo, PT_UDP, &rtp_address, LWRTP_PORT, 0, "Livewire", pinfo->num, RTP_MEDIA_AUDIO, dyn_payload);
         free_address_wmem(wmem_file_scope(), &rtp_address);
