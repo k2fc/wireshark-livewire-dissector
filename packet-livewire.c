@@ -58,6 +58,7 @@ static int hf_lw_busy_fader;
 static int hf_lw_busy_ip;
 static int hf_lw_busy_prefix;
 
+static int hf_lw_gpio;
 static int hf_lw_gpio_lcid;
 static int hf_lw_gpio_state;
 static int hf_lw_gpio_state2;
@@ -412,39 +413,56 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             uint32_t mult;
             uint32_t len;
             bool gpi = false;
-            proto_item *lpid_item = proto_tree_add_item_ret_uint(tree, hf_lw_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
-            if (lpid != 0xFF) info->lpid = lpid;
+            bool source_is_new = false;
+            proto_item *ti = proto_tree_add_item(tree, hf_lw_gpio, tvb, offset + 1, 5, ENC_NA);
+            proto_tree *gpio_tree = proto_item_add_subtree(ti, ett_lwadv);
+            proto_item *lpid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
+            if (lpid != 0xFF) {
+                if (info->lpid != lpid) source_is_new = true;
+                info->lpid = lpid;
+            }
             else lpid = info->lpid;
             lw_src_info_t *source = wmem_tree_lookup32(lwadv_sources, lpid);
             lw_term_info_t *term;
             if (source) term = source->term;
             if (source && source->psnm && term && term->atrn)
                 proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
-            proto_item *lcid_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
+            proto_item *lcid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
             if (lcid < 9) lcid = 9-lcid;
             else {
                 lcid = 14-lcid;
                 gpi = true;
             }
             proto_item_append_text (lcid_item, gpi ? " [GPI Pin %d]" :  " [GPO Pin %d]", lcid);
-            proto_item *pmult_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
-            proto_item *state_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
-            proto_item *plen_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
+            proto_item *pmult_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
+            proto_item *state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+            proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
             len *= mult ? 20 : 500;
             if (!state && !mult && !len) {
                 proto_item_append_text(state_item, " [Ignored]");
-                state_item = proto_tree_add_item_ret_uint(tree, hf_lw_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+                state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
             }
             proto_item_append_text (state_item, " [%s]", state ? "Low" : "High");
             proto_item_append_text (pmult_item, " [%s]", mult ? "20 mS" : "500 mS");
             if (len) proto_item_append_text(plen_item, " [%d mS]", len);
-            col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
-            if (source && source->psnm && term && term->atrn) 
-                col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
+            proto_item_append_text(ti, ": LPID=%d ", lpid);
+            if (source_is_new) col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
+            if (source && source->psnm && term && term->atrn) {
+                proto_item_append_text(ti, "[%s@%s] ", source->psnm, term->atrn);
+                if (source_is_new) col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
+            }
+            proto_item_append_text(ti, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
             col_append_fstr(pinfo->cinfo, COL_INFO, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
-            if (len) col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
+            if (len) {
+                proto_item_append_text(ti, "Pulse ");
+                col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
+            }
+            proto_item_append_text(ti, "%s ", state? "Low" : "High");
             col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", state? "Low" : "High");
-            if (len) col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
+            if (len) {
+                proto_item_append_text(ti, "for %dmS ", len);
+                col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
+            }
             return offset + 6;
             break;
 
@@ -516,6 +534,7 @@ void proto_register_lwadv(void)
         { &hf_lw_busy_ip,       { "Console IP Address",     "lwadv.busy.ip",    FT_IPv4,    BASE_NONE,  NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
         { &hf_lw_busy_prefix,   { "Console IP Prefix",      "lwadv.busy.prefix",FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
 
+        { &hf_lw_gpio,          { "GPIO Message",           "lwadv.gpio",       FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
         { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "lwadv.gpio.lcid",  FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
         { &hf_lw_gpio_state,    { "Logic Circuit State",    "lwadv.gpio.state", FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
         { &hf_lw_gpio_state2,   { "Logic Circuit State",    "lwadv.gpio.state", FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
