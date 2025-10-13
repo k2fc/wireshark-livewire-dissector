@@ -101,9 +101,9 @@ typedef struct {
 static dissector_handle_t lwadv_handle;
 static dissector_handle_t lwgpio_handle;
 static const value_string advtypenames[] = {
-    { 0x1, "Livewire source advertisement" },
-    { 0x2, "Livewire node advertisement" },
-    { 0x3, "Livewire source allocation advertisment" },
+    { 0x1, "Verbose announcement" },
+    { 0x2, "Periodic announcement" },
+    { 0x3, "Source allocation state" },
     { 0, NULL }
 };
 static char* get_opcode_description(char* opcode)
