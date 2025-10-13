@@ -89,7 +89,7 @@ typedef struct {
     ws_in4_addr fsid;
     char* psnm;
     lw_term_info_t* term;
-    bool rtp_added;
+    ws_in4_addr rtp_added;
 } lw_src_info_t;
 
 typedef struct {
@@ -129,7 +129,7 @@ static void setup_lw_transport(packet_info *pinfo, uint16_t psid){
         return;
     }
     lw_src_info_t *src_info = (lw_src_info_t*)wmem_tree_lookup32(lwadv_sources, psid);
-    if (src_info && src_info->fsid && !(src_info->rtp_added)) {
+    if (src_info && src_info->fsid && src_info->rtp_added != src_info->fsid) {
         // set up an rtp stream here
         address rtp_address;
         rtp_dyn_payload_t *dyn_payload = rtp_dyn_payload_new();
@@ -139,7 +139,7 @@ static void setup_lw_transport(packet_info *pinfo, uint16_t psid){
         rtp_add_address(pinfo, PT_UDP, &rtp_address, LWRTP_PORT, 0, "Livewire", pinfo->num, RTP_MEDIA_AUDIO, dyn_payload);
         free_address_wmem(wmem_file_scope(), &rtp_address);
         rtp_dyn_payload_free(dyn_payload);
-        src_info->rtp_added = true;
+        src_info->rtp_added = src_info->fsid;
     }
 }
 static void setup_adv_conversation(packet_info *pinfo, lw_term_info_t *term_info) {
