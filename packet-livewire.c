@@ -500,54 +500,54 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 void proto_register_lwadv(void)
 {
     static hf_register_info hf[] = {
-        { &hf_lw_seq,           { "Sequence",               "lwadv.seq",                FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_msg_count,     { "Nested message count",   "lwadv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_pver,          { "Protocol Version",       "lwadv.pver",               FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_advt,          { "Advertisement type",     "lwadv.advt",               FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u8,        { "Unknown Byte",           "lwadv.unknown",            FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u16,       { "Unknown Int",            "lwadv.unknown",            FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u32,       { "Unknown Int",            "lwadv.unknown",            FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_data,      { "Unknown Data",           "lwadv.unknown",            FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
-        { &hf_lw_unk_str,       { "Unknown String",         "lwadv.unknown",            FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_opcode,        { "Operation",              "lwadv.opcode",             FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_seq,           { "Sequence",               "axia.adv.seq",                FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_msg_count,     { "Nested message count",   "axia.adv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_pver,          { "Protocol Version",       "axia.adv.pver",               FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_advt,          { "Advertisement type",     "axia.adv.advt",               FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u8,        { "Unknown Byte",           "axia.adv.unknown",            FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u16,       { "Unknown Int",            "axia.adv.unknown",            FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u32,       { "Unknown Int",            "axia.adv.unknown",            FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_data,      { "Unknown Data",           "axia.adv.unknown",            FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
+        { &hf_lw_unk_str,       { "Unknown String",         "axia.adv.unknown",            FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_opcode,        { "Operation",              "axia.adv.opcode",             FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_term,          { "Terminal Information",   "lwadv.term",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_inip,     { "IP Address",             "lwadv.term.inip",          FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_hwid,     { "Hardware ID",            "lwadv.term.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_advv,     { "Advertisement Version",  "lwadv.term.advv",          FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_udpc,     { "UDP Port",               "lwadv.term.udpc",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_nums,     { "Number of Sources",      "lwadv.term.nums",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_atrn,     { "Terminal Name",          "lwadv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_type,     { "Type",                   "lwadv.term.type",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term,          { "Terminal Information",   "axia.adv.term",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_inip,     { "IP Address",             "axia.adv.term.inip",          FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_hwid,     { "Hardware ID",            "axia.adv.term.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_advv,     { "Advertisement Version",  "axia.adv.term.advv",          FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_udpc,     { "UDP Port",               "axia.adv.term.udpc",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_nums,     { "Number of Sources",      "axia.adv.term.nums",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_atrn,     { "Terminal Name",          "axia.adv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term_type,     { "Type",                   "axia.adv.term.type",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_src,           { "Source Information",     "lwadv.src",                FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psid,      { "Livewire Source ID",     "lwadv.src.psid",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_shab,      { "Sharable",               "lwadv.src.shab",           FT_BOOLEAN, 0,          NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_fsid,      { "Multicast address",      "lwadv.src.fsid",           FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_bsid,      { "Backfeed address",       "lwadv.src.bsid",           FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_psnm,      { "Name",                   "lwadv.src.psnm",           FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_src_lpid,      { "Logic Port ID",          "lwadv.src.lpid",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src,           { "Source Information",     "axia.adv.src",                FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psid,      { "Livewire Source ID",     "axia.adv.src.psid",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_shab,      { "Sharable",               "axia.adv.src.shab",           FT_BOOLEAN, 0,          NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_fsid,      { "Multicast address",      "axia.adv.src.fsid",           FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_bsid,      { "Backfeed address",       "axia.adv.src.bsid",           FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_psnm,      { "Name",                   "axia.adv.src.psnm",           FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_src_lpid,      { "Logic Port ID",          "axia.adv.src.lpid",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_busy,          { "Source Allocation",      "lwadv.busy",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_hwid,     { "Console HWID",           "lwadv.busy.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_fader,    { "Fader",                  "lwadv.busy.fader",         FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_busy_ip,       { "Console IP Address",     "lwadv.busy.ip",            FT_IPv4,    BASE_NONE,  NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
-        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "lwadv.busy.prefix",        FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy,          { "Source Allocation",      "axia.adv.busy",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_hwid,     { "Console HWID",           "axia.adv.busy.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_fader,    { "Fader",                  "axia.adv.busy.fader",         FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_busy_ip,       { "Console IP Address",     "axia.adv.busy.ip",            FT_IPv4,    BASE_NONE,  NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
+        { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia.adv.busy.prefix",        FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_gpio,          { "GPIO Message",           "lwadv.gpio",               FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
-        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "lwadv.gpio.lcid",          FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
-        { &hf_lw_gpio_state,    { "Logic Circuit State",    "lwadv.gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
-        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "lwadv.gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
-        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "lwadv.gpio.pulse_len_mult",FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
-        { &hf_lw_gpio_plen,     { "Pulse length",           "lwadv.gpio.pulse_len",     FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
+        { &hf_lw_gpio,          { "GPIO Message",           "axia.gpio",               FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
+        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia.gpio.lcid",          FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
+        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia.gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
+        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia.gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
+        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia.gpio.pulse_len_mult",FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
+        { &hf_lw_gpio_plen,     { "Pulse length",           "axia.gpio.pulse_len",     FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
     };
 
     static int *ett[] = {
         &ett_lwadv
     };
     
-    proto_lwadv = proto_register_protocol("Livewire Advertisement", "LW-ADV", "lwadv");
-    proto_lwgpio = proto_register_protocol("Livewire GPIO", "LW-GPIO", "lwgpio");
+    proto_lwadv = proto_register_protocol("Livewire Advertisement", "LW-ADV", "axia.adv");
+    proto_lwgpio = proto_register_protocol("Livewire GPIO", "LW-GPIO", "axia.gpio");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     lwadv_handle = register_dissector_with_description(
