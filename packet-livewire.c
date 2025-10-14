@@ -235,9 +235,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
     }
     if (get_opcode_description(msg_type)){
         int msg_count = tvb_get_uint8(tvb, offset + 1);
-        proto_item *ti = proto_tree_add_item(tree, hf_lw_opcode, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
+        proto_tree_add_string_format(tree, hf_lw_opcode, tvb, offset - 4, 4, msg_type, 
+            "Operation: %s (%s)", get_opcode_description(msg_type), msg_type);
         //proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
-        proto_item_append_text(ti, " [%s]", get_opcode_description(msg_type));
         offset += tree_add_value(tree, tvb, offset, hf_lw_msg_count);
         for (int i = 0; i < msg_count; i++) {
             increment_dissection_depth(pinfo);
