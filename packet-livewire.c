@@ -86,6 +86,7 @@ typedef struct {
     ws_in4_addr inip;
     uint16_t udpc;
     conversation_t *conversation;
+    uint32_t nums;
 } lw_term_info_t;
 typedef struct {
     uint32_t psid;
@@ -101,6 +102,7 @@ typedef struct {
     lw_term_info_t *term_info;
     lw_src_info_t *src_info;
     int16_t lpid;
+    int32_t nums;
 } lw_info_t;
 
 static dissector_handle_t lwadv_handle;
@@ -284,6 +286,9 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
             decrement_dissection_depth(pinfo);
         }
+        if (section == SECTION_ADV_BASE && info->src_info && info->term_info->nums){
+            col_append_fstr(pinfo->cinfo, COL_INFO, " (%d of %d Sources)", info->nums, info->term_info->nums);
+        }
         return offset;
     } else if (section == SECTION_GPIO) offset -= 4;
     switch (section) {
@@ -319,6 +324,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 msg_type[2] >= '0' && msg_type[2] <= '9' &&
                 msg_type[3] >= '0' && msg_type[3] <= '9' 
                 ){
+                info->nums++;
                 int src_num = ((msg_type[1] - '0') * 100) + ((msg_type[2] - '0') * 10) + (msg_type[3] - '0');
                 int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
                 proto_item *ti = proto_tree_add_item(tree, hf_lw_src, tvb, offset - 4, len + 7, ENC_NA);
@@ -381,6 +387,7 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_udpc);
             }
             else if (strcmp(msg_type,"NUMS") == 0){
+                info->term_info->nums = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
                 return offset + tree_add_value(tree, tvb, offset, hf_lw_term_nums);
             }
             else if (strcmp(msg_type,"ATRN") == 0){
