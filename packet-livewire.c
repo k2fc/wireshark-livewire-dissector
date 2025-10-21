@@ -286,7 +286,8 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
             offset = dissect_lwadv_msg(tvb, pinfo, tree, offset, section, info);
             decrement_dissection_depth(pinfo);
         }
-        if (section == SECTION_ADV_BASE && info->src_info && info->term_info->nums){
+        if (section == SECTION_ADV_BASE && info->src_info &&
+             info->term_info && info->term_info->nums){
             col_append_fstr(pinfo->cinfo, COL_INFO, " (%d of %d Sources)", info->nums, info->term_info->nums);
         }
         return offset;
