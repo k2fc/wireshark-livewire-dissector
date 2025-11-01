@@ -351,8 +351,15 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
                         proto_item_set_generated(ti);
                     }
                     if (info->src_info->fsid && info->src_info->bsid){
+                        bool is_mm = info->src_info->bsid == info->src_info->fsid;
                         ti = proto_tree_add_boolean(source_tree, hf_lw_src_is_mm, 
-                            tvb, 0, 0, info->src_info->bsid == info->src_info->fsid);
+                            tvb, 0, 0, is_mm);
+                        if (is_mm) {
+                            proto_item_set_text(ti, "Source is a backfeed");
+                        }
+                        else {
+                            proto_item_set_hidden(ti);                            
+                        }
                         proto_item_set_generated(ti);
                     }
                 } 
