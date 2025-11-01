@@ -25,6 +25,7 @@ WS_DLL_PUBLIC void plugin_register(void);
 static int proto_lwadv = -1;
 static int proto_lwgpio = -1;
 
+static int hf_lw_magic_num;
 static int hf_lw_seq;
 static int hf_lw_opcode;
 static int hf_lw_msg_count;
@@ -178,7 +179,7 @@ static bool validate_header(tvbuff_t* tvb)
     if (tvb_captured_length(tvb) < 16) {
         return false;
     }
-    else if (tvb_get_uint32(tvb, 0, ENC_BIG_ENDIAN) != AXIA_MAGIC_NUMBER) {
+    else if (tvb_get_ntohl(tvb, 0) != AXIA_MAGIC_NUMBER) {
         return false;
     }
     for (int i = 8; i < 16; i++) {
@@ -545,6 +546,7 @@ static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, vo
 
     proto_item *ti = proto_tree_add_item(tree, proto_lwadv, tvb, 0, -1, ENC_NA);
     proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree_add_item(lwadv_tree, hf_lw_magic_num, tvb, 0, 4, ENC_NA);
     proto_tree_add_item(lwadv_tree, hf_lw_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
     int offset = 16;
     dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_ADV_BASE, NULL);
@@ -559,6 +561,7 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 
     proto_item *ti = proto_tree_add_item(tree, proto_lwgpio, tvb, 0, -1, ENC_NA);
     proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree_add_item(lwadv_tree, hf_lw_magic_num, tvb, 0, 4, ENC_NA);
     proto_tree_add_item(lwadv_tree, hf_lw_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
     int offset = 16;
     dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_GPIO, NULL);
@@ -567,6 +570,7 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 void proto_register_lwadv(void)
 {
     static hf_register_info hf[] = {
+        { &hf_lw_magic_num,     { "Axia Magic Number",      "axia_adv.magic_number",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_seq,           { "Sequence",               "axia_adv.seq",                FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_msg_count,     { "Nested message count",   "axia_adv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_pver,          { "Protocol Version",       "axia_adv.pver",               FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
