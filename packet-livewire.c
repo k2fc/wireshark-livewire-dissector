@@ -13,6 +13,7 @@
 #define LWADV_PORT 4001 
 #define LWGPIO_CONSOLE_PORT 2060 
 #define LWGPIO_NODE_PORT 2055 
+#define LWCLOCK_PORT 7000 
 #define LWRTP_PORT 5004
 #define AXIA_MAGIC_NUMBER 0x03000207
 
@@ -24,6 +25,7 @@ WS_DLL_PUBLIC void plugin_register(void);
 
 static int proto_lwadv = -1;
 static int proto_lwgpio = -1;
+static int proto_lwclock = -1;
 
 static int hf_lw_magic_num;
 static int hf_lw_seq;
@@ -69,6 +71,13 @@ static int hf_lw_gpio_state2;
 static int hf_lw_gpio_pmult;
 static int hf_lw_gpio_plen;
 
+static int hf_lw_clock_prio;
+static int hf_lw_clock_hwid;
+static int hf_lw_clock_mac;
+static int hf_lw_clock_samp;
+static int hf_lw_clock_fast;
+static int hf_lw_clock_seq;
+
 static int ett_lwadv;
 
 static wmem_tree_t *lwadv_sources;
@@ -108,6 +117,7 @@ typedef struct {
 
 static dissector_handle_t lwadv_handle;
 static dissector_handle_t lwgpio_handle;
+static dissector_handle_t lwclock_handle;
 static const value_string advtypenames[] = {
     { 0x1, "Verbose announcement" },
     { 0x2, "Periodic announcement" },
@@ -574,6 +584,19 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
     dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_GPIO, NULL);
     return offset;
 }
+static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-CLOCK");
+    col_clear(pinfo->cinfo, COL_INFO);
+    proto_item *ti = proto_tree_add_item(tree, proto_lwclock, tvb, 0, -1, ENC_NA);
+    proto_tree *lwclock_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_seq, tvb, 0, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_prio, tvb, 27, 1, ENC_NA);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA);
+    return 36;
+}
 void proto_register_lwadv(void)
 {
     static hf_register_info hf[] = {
@@ -614,12 +637,19 @@ void proto_register_lwadv(void)
         { &hf_lw_busy_ip,       { "Console IP Address",     "axia_adv.busy.ip",            FT_IPv4,    BASE_NONE,   NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
         { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia_adv.busy.prefix",        FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_gpio,          { "GPIO Message",           "axia_gpio",               FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
-        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia_gpio.lcid",          FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
-        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia_gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
-        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia_gpio.state",         FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
-        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia_gpio.pulse_len_mult",FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
-        { &hf_lw_gpio_plen,     { "Pulse length",           "axia_gpio.pulse_len",     FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
+        { &hf_lw_gpio,          { "GPIO Message",           "axia_gpio",                FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
+        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia_gpio.lcid",           FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
+        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia_gpio.state",          FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
+        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia_gpio.state",          FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
+        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia_gpio.pulse_len_mult", FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
+        { &hf_lw_gpio_plen,     { "Pulse length",           "axia_gpio.pulse_len",      FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
+
+        { &hf_lw_clock_hwid,    { "Clock Hardware ID",      "axia_clock.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_prio,    { "Priority",               "axia_clock.priority",      FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_mac,     { "Clock MAC Address",      "axia_clock.mac",           FT_ETHER,   BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_samp,    { "Timstamp in samples",    "axia_clock.timestamp",     FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_fast,    { "Timstamp in live packets","axia_clock.fast",         FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_seq,     { "Sequence",               "axia_clock.seq",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
     };
 
     static int *ett[] = {
@@ -628,6 +658,7 @@ void proto_register_lwadv(void)
     
     proto_lwadv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA-ADV", "axia_adv");
     proto_lwgpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA-GPIO", "axia_gpio");
+    proto_lwclock = proto_register_protocol("Axia Livewire High-Rate Clock", "AXIA-CLOCK", "axia_clock");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     lwadv_handle = register_dissector_with_description(
@@ -642,7 +673,12 @@ void proto_register_lwadv(void)
         dissect_lwgpio,
         proto_lwgpio
     );
-
+    lwclock_handle = register_dissector_with_description(
+        "livewire-clock",
+        "Axia Livewire High-Rate Clock",
+        dissect_lwclock,
+        proto_lwclock
+    );
     lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     lwadv_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
 }
@@ -651,6 +687,7 @@ void proto_reg_handoff_lwadv(void)
     dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
     dissector_add_uint_with_preference("udp.port", LWGPIO_CONSOLE_PORT, lwgpio_handle);
     dissector_add_uint_with_preference("udp.port", LWGPIO_NODE_PORT, lwgpio_handle);
+    dissector_add_uint_with_preference("udp.port", LWCLOCK_PORT, lwclock_handle);
     return;
     /*address adv_address;
     uint32_t ip4_addr;
