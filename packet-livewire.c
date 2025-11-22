@@ -637,15 +637,17 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
 {
     if (!test_lwclock(pinfo, tvb, 0, data))
         return 0; // not clock
+    uint32_t timestamp;
+    uint32_t seq;
+
     conversation_t *conversation = find_or_create_conversation(pinfo);
     conversation_set_dissector(conversation, lwclock_handle);
-    uint32_t timestamp;
     bool fast_rate = !cmp_address(&pinfo->net_dst, &fast_clock_address);
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-CLOCK");
     col_set_str(pinfo->cinfo, COL_INFO, fast_rate ? "Fast Clock" : "Slow Clock");
     proto_item *ti = proto_tree_add_item(tree, proto_lwclock, tvb, 0, -1, ENC_NA);
     proto_tree *lwclock_tree = proto_item_add_subtree(ti, ett_lwadv);
-    proto_tree_add_item(lwclock_tree, hf_lw_clock_seq, tvb, 2, 2, ENC_BIG_ENDIAN);
+    proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_seq, tvb, 2, 2, ENC_BIG_ENDIAN, &seq);
     proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &timestamp);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_type, tvb, 20, 1, ENC_NA);
@@ -653,7 +655,7 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
     proto_tree_add_item(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA);
     ti = proto_tree_add_boolean(lwclock_tree, hf_lw_clock_rate, tvb, 0, 0, fast_rate);
     proto_item_set_generated(ti);
-    col_append_fstr(pinfo->cinfo, COL_INFO, ", Time=%u", timestamp);
+    col_append_fstr(pinfo->cinfo, COL_INFO, ", Seq=%u, Time=%u", seq, timestamp);
     return 36;
 }
 static bool dissect_lwadv_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
