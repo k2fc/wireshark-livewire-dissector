@@ -13,9 +13,12 @@
 #define LWADV_PORT 4001 
 #define LWGPIO_CONSOLE_PORT 2060 
 #define LWGPIO_NODE_PORT 2055 
-#define LWCLOCK_PORT 7000 
 #define LWRTP_PORT 5004
 #define AXIA_MAGIC_NUMBER 0x03000207
+#define FAST_CLOCK_ADDR "239.192.255.1"
+#define FAST_CLOCK_PORT 5004
+#define SLOW_CLOCK_ADDR "239.192.255.2"
+#define SLOW_CLOCK_PORT 7000
 
 WS_DLL_PUBLIC_DEF const gchar plugin_version[] = VERSION;
 WS_DLL_PUBLIC_DEF const int plugin_want_major = WIRESHARK_VERSION_MAJOR;
@@ -77,11 +80,16 @@ static int hf_lw_clock_mac;
 static int hf_lw_clock_samp;
 static int hf_lw_clock_fast;
 static int hf_lw_clock_seq;
+static int hf_lw_clock_rate;
+static int hf_lw_clock_type;
 
 static int ett_lwadv;
 
 static wmem_tree_t *lwadv_sources;
 static wmem_tree_t *lwadv_nodes;
+
+static address fast_clock_address;
+static address slow_clock_address;
 
 typedef enum {
     SECTION_ADV_BASE,
@@ -123,6 +131,12 @@ static const value_string advtypenames[] = {
     { 0x2, "Periodic announcement" },
     { 0x3, "Source allocation state" },
     { 0, NULL }
+};
+static const value_string clocktypenames[] = {
+    { 0x0a, "Fast clock sync" },
+    { 0x0b, "Fast clock follow-up" },
+    { 0x0c, "Slow clock sync" },
+    { 0, NULL },
 };
 static char* get_opcode_description(char* opcode)
 {
@@ -586,40 +600,49 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 }
 static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
+    uint32_t timestamp;
+    bool fast_rate = !cmp_address(&pinfo->net_dst, &fast_clock_address);
+    if (!fast_rate && cmp_address(&pinfo->net_dst, &slow_clock_address))
+        return 0; //if it isn't to eigher clock address, then we shouldn't proceed
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-CLOCK");
-    col_clear(pinfo->cinfo, COL_INFO);
+    col_set_str(pinfo->cinfo, COL_INFO, fast_rate ? "Fast Clock" : "Slow Clock");
     proto_item *ti = proto_tree_add_item(tree, proto_lwclock, tvb, 0, -1, ENC_NA);
     proto_tree *lwclock_tree = proto_item_add_subtree(ti, ett_lwadv);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_seq, tvb, 0, 4, ENC_BIG_ENDIAN);
-    proto_tree_add_item(lwclock_tree, hf_lw_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &timestamp);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_type, tvb, 20, 1, ENC_NA);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_prio, tvb, 27, 1, ENC_NA);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA);
+    ti = proto_tree_add_boolean(lwclock_tree, hf_lw_clock_rate, tvb, 0, 0, fast_rate);
+    proto_item_set_generated(ti);
+    col_append_fstr(pinfo->cinfo, COL_INFO, ", Time=%d", timestamp);
     return 36;
 }
 void proto_register_lwadv(void)
 {
+    expert_module_t* expert_lwadv;
     static hf_register_info hf[] = {
-        { &hf_lw_magic_num,     { "Axia Magic Number",      "axia_adv.magic_number",       FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_seq,           { "Sequence",               "axia_adv.seq",                FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_msg_count,     { "Nested message count",   "axia_adv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_pver,          { "Protocol Version",       "axia_adv.pver",               FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_advt,          { "Advertisement type",     "axia_adv.advt",               FT_UINT8,   BASE_HEX,   VALS(advtypenames), 0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u8,        { "Unknown Byte",           "axia_adv.unknown",            FT_UINT8,   BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u16,       { "Unknown Int",            "axia_adv.unknown",            FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_u32,       { "Unknown Int",            "axia_adv.unknown",            FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_unk_data,      { "Unknown Data",           "axia_adv.unknown",            FT_BYTES,   SEP_COLON,  NULL,               0x0,    "",     HFILL } },
-        { &hf_lw_unk_str,       { "Unknown String",         "axia_adv.unknown",            FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_opcode,        { "Operation",              "axia_adv.opcode",             FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_magic_num,     { "Axia Magic Number",      "axia_adv.magic_number",       FT_NONE,    BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_seq,           { "Sequence",               "axia_adv.seq",                FT_UINT32,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_msg_count,     { "Nested message count",   "axia_adv.msgcount",           FT_UINT8,   BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_pver,          { "Protocol Version",       "axia_adv.pver",               FT_UINT16,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_advt,          { "Advertisement type",     "axia_adv.advt",               FT_UINT8,   BASE_HEX,   VALS(advtypenames),  0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u8,        { "Unknown Byte",           "axia_adv.unknown",            FT_UINT8,   BASE_HEX,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u16,       { "Unknown Int",            "axia_adv.unknown",            FT_UINT16,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_u32,       { "Unknown Int",            "axia_adv.unknown",            FT_UINT32,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_unk_data,      { "Unknown Data",           "axia_adv.unknown",            FT_BYTES,   SEP_COLON,  NULL,                0x0,    "",     HFILL } },
+        { &hf_lw_unk_str,       { "Unknown String",         "axia_adv.unknown",            FT_STRING,  BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_opcode,        { "Operation",              "axia_adv.opcode",             FT_STRING,  BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
 
-        { &hf_lw_term,          { "Terminal Information",   "axia_adv.term",               FT_NONE,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_inip,     { "IP Address",             "axia_adv.term.inip",          FT_IPv4,    BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_hwid,     { "Hardware ID",            "axia_adv.term.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_advv,     { "Advertisement Version",  "axia_adv.term.advv",          FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_udpc,     { "UDP Port",               "axia_adv.term.udpc",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_nums,     { "Number of Sources",      "axia_adv.term.nums",          FT_UINT16,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_atrn,     { "Terminal Name",          "axia_adv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_term_type,     { "Type",                   "axia_adv.term.type",          FT_STRING,  BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_term,          { "Terminal Information",   "axia_adv.term",               FT_NONE,    BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_inip,     { "IP Address",             "axia_adv.term.inip",          FT_IPv4,    BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_hwid,     { "Hardware ID",            "axia_adv.term.hwid",          FT_UINT16,  BASE_HEX,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_advv,     { "Advertisement Version",  "axia_adv.term.advv",          FT_UINT32,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_udpc,     { "UDP Port",               "axia_adv.term.udpc",          FT_UINT16,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_nums,     { "Number of Sources",      "axia_adv.term.nums",          FT_UINT16,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_atrn,     { "Terminal Name",          "axia_adv.term.atrn",          FT_STRING,  BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
+        { &hf_lw_term_type,     { "Type",                   "axia_adv.term.type",          FT_STRING,  BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
 
         { &hf_lw_src,           { "Source Information",     "axia_adv.src",                FT_NONE,    BASE_NONE,   NULL,               0x0,    NULL,   HFILL } },
         { &hf_lw_src_psid,      { "Livewire Source ID",     "axia_adv.src.psid",           FT_UINT32,  BASE_DEC,    NULL,               0x0,    NULL,   HFILL } },
@@ -637,19 +660,21 @@ void proto_register_lwadv(void)
         { &hf_lw_busy_ip,       { "Console IP Address",     "axia_adv.busy.ip",            FT_IPv4,    BASE_NONE,   NULL,    0xFFFF0000FFFF,    NULL,   HFILL } },
         { &hf_lw_busy_prefix,   { "Console IP Prefix",      "axia_adv.busy.prefix",        FT_UINT16,  BASE_HEX,    NULL,               0x0,    NULL,   HFILL } },
 
-        { &hf_lw_gpio,          { "GPIO Message",           "axia_gpio",                FT_NONE,    BASE_NONE,  NULL,               0x00,   NULL,   HFILL } },
-        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia_gpio.lcid",           FT_UINT8,   BASE_DEC,   NULL,               0x0F,   NULL,   HFILL } },
-        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia_gpio.state",          FT_UINT8,   BASE_DEC,   NULL,               0x40,   NULL,   HFILL } },
-        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia_gpio.state",          FT_UINT8,   BASE_DEC,   NULL,               0x01,   NULL,   HFILL } },
-        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia_gpio.pulse_len_mult", FT_UINT8,   BASE_DEC,   NULL,               0x80,   NULL,   HFILL } },
-        { &hf_lw_gpio_plen,     { "Pulse length",           "axia_gpio.pulse_len",      FT_UINT8,   BASE_DEC,   NULL,               0x3E,   NULL,   HFILL } },
+        { &hf_lw_gpio,          { "GPIO Message",           "axia_gpio",                    FT_NONE,    BASE_NONE,  NULL,                   0x00,   NULL,   HFILL } },
+        { &hf_lw_gpio_lcid,     { "Logic Circuit ID",       "axia_gpio.lcid",               FT_UINT8,   BASE_DEC,   NULL,                   0x0F,   NULL,   HFILL } },
+        { &hf_lw_gpio_state,    { "Logic Circuit State",    "axia_gpio.state",              FT_UINT8,   BASE_DEC,   NULL,                   0x40,   NULL,   HFILL } },
+        { &hf_lw_gpio_state2,   { "Logic Circuit State",    "axia_gpio.state",              FT_UINT8,   BASE_DEC,   NULL,                   0x01,   NULL,   HFILL } },
+        { &hf_lw_gpio_pmult,    { "Pulse length multipier", "axia_gpio.pulse_len_mult",     FT_UINT8,   BASE_DEC,   NULL,                   0x80,   NULL,   HFILL } },
+        { &hf_lw_gpio_plen,     { "Pulse length",           "axia_gpio.pulse_len",          FT_UINT8,   BASE_DEC,   NULL,                   0x3E,   NULL,   HFILL } },
 
-        { &hf_lw_clock_hwid,    { "Clock Hardware ID",      "axia_clock.hwid",          FT_UINT16,  BASE_HEX,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_clock_prio,    { "Priority",               "axia_clock.priority",      FT_UINT8,   BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_clock_mac,     { "Clock MAC Address",      "axia_clock.mac",           FT_ETHER,   BASE_NONE,  NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_clock_samp,    { "Timstamp in samples",    "axia_clock.timestamp",     FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_clock_fast,    { "Timstamp in live packets","axia_clock.fast",         FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
-        { &hf_lw_clock_seq,     { "Sequence",               "axia_clock.seq",           FT_UINT32,  BASE_DEC,   NULL,               0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_hwid,    { "Clock Hardware ID",      "axia_clock.hwid",              FT_UINT16,  BASE_HEX,   NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_prio,    { "Priority",               "axia_clock.priority",          FT_UINT8,   BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_mac,     { "Clock MAC Address",      "axia_clock.mac",               FT_ETHER,   BASE_NONE,  NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_samp,    { "Timstamp in samples",    "axia_clock.timestamp",         FT_UINT32,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_fast,    { "Timstamp in live packets","axia_clock.fast",             FT_UINT32,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_seq,     { "Sequence",               "axia_clock.seq",               FT_UINT32,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_rate,    { "Is Fast-Rate Clock",     "axia_clock.rate",              FT_BOOLEAN, BASE_NONE,  NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_type,    { "Clock message type",     "axia_clock.type",              FT_UINT8,   BASE_HEX,   VALS(clocktypenames),   0x0,    NULL,   HFILL } },
     };
 
     static int *ett[] = {
@@ -658,7 +683,7 @@ void proto_register_lwadv(void)
     
     proto_lwadv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA-ADV", "axia_adv");
     proto_lwgpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA-GPIO", "axia_gpio");
-    proto_lwclock = proto_register_protocol("Axia Livewire High-Rate Clock", "AXIA-CLOCK", "axia_clock");
+    proto_lwclock = proto_register_protocol("Axia Livewire Clock", "AXIA-CLOCK", "axia_clock");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     lwadv_handle = register_dissector_with_description(
@@ -675,7 +700,7 @@ void proto_register_lwadv(void)
     );
     lwclock_handle = register_dissector_with_description(
         "livewire-clock",
-        "Axia Livewire High-Rate Clock",
+        "Axia Livewire Clock",
         dissect_lwclock,
         proto_lwclock
     );
@@ -687,7 +712,15 @@ void proto_reg_handoff_lwadv(void)
     dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
     dissector_add_uint_with_preference("udp.port", LWGPIO_CONSOLE_PORT, lwgpio_handle);
     dissector_add_uint_with_preference("udp.port", LWGPIO_NODE_PORT, lwgpio_handle);
-    dissector_add_uint_with_preference("udp.port", LWCLOCK_PORT, lwclock_handle);
+    uint32_t ip4_addr;
+    str_to_ip(FAST_CLOCK_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_file_scope(), &fast_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    str_to_ip(SLOW_CLOCK_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_file_scope(), &slow_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    conversation_t *conversation = conversation_new(0, &fast_clock_address, NULL, CONVERSATION_UDP, FAST_CLOCK_PORT, 0, NO_ADDR2|NO_PORT2);
+    conversation_set_dissector(conversation, lwclock_handle);
+    conversation = conversation_new(0, &slow_clock_address, NULL, CONVERSATION_UDP, SLOW_CLOCK_PORT, 0, NO_ADDR2|NO_PORT2);
+    conversation_set_dissector(conversation, lwclock_handle);
     return;
     /*address adv_address;
     uint32_t ip4_addr;
