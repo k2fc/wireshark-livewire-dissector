@@ -10,15 +10,17 @@
 #define VERSION "0.0.0"
 #endif
 
-#define LWADV_PORT 4001 
-#define LWGPIO_CONSOLE_PORT 2060 
-#define LWGPIO_NODE_PORT 2055 
-#define LWRTP_PORT 5004
 #define AXIA_MAGIC_NUMBER 0x03000207
 #define FAST_CLOCK_ADDR "239.192.255.1"
 #define FAST_CLOCK_PORT 5004
 #define SLOW_CLOCK_ADDR "239.192.255.2"
 #define SLOW_CLOCK_PORT 7000
+#define LWADV_ADDR "239.192.255.3"
+#define LWADV_PORT 4001 
+#define LWGPIO_ADDR "239.192.255.4"
+#define LWGPIO_CONSOLE_PORT 2060 
+#define LWGPIO_NODE_PORT 2055 
+#define LWRTP_PORT 5004
 
 WS_DLL_PUBLIC_DEF const gchar plugin_version[] = VERSION;
 WS_DLL_PUBLIC_DEF const int plugin_want_major = WIRESHARK_VERSION_MAJOR;
@@ -90,6 +92,8 @@ static wmem_tree_t *lwadv_nodes;
 
 static address fast_clock_address;
 static address slow_clock_address;
+static address advertisement_address;
+static address gpio_address;
 
 typedef enum {
     SECTION_ADV_BASE,
@@ -568,10 +572,40 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
     }
     return offset + dissect_lwadv_unk(tvb, pinfo, tree, offset);
 }
-static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+static bool test_lwadv(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void *data _U_)
 {
-    if (!validate_header(tvb)) /* This is not an Axia packet */ 
+    if (cmp_address(&pinfo->net_dst, &advertisement_address))
+        return false;
+    if (!validate_header(tvb))
+        return false;
+    return true;
+}
+static bool test_lwgpio(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void *data _U_)
+{
+    if (cmp_address(&pinfo->net_dst, &gpio_address))
+        return false;
+    if (!validate_header(tvb))
+        return false;
+    return true;
+}
+static bool test_lwclock(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void *data _U_)
+{
+    if (cmp_address(&pinfo->net_dst, &fast_clock_address) && cmp_address(&pinfo->net_dst, &slow_clock_address))
+        return false;
+    if (tvb_captured_length(tvb) != 36)
+        return false;
+    if (tvb_get_uint8(tvb, 0) != 0x90)
+        return false;
+    if (tvb_get_uint8(tvb, 1) != 0xff)
+        return false;
+    return true;
+}
+static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    if (!test_lwadv(pinfo, tvb, 0, data)) /* This is not an Axia packet */ 
         return 0;
+    conversation_t *conversation = find_or_create_conversation(pinfo);
+    conversation_set_dissector(conversation, lwadv_handle);
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-ADV");
     col_clear(pinfo->cinfo,COL_INFO);
 
@@ -583,13 +617,14 @@ static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, vo
     dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_ADV_BASE, NULL);
     return offset;
 }
-static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-    if (!validate_header(tvb)) /* This is not an Axia packet */ 
+    if (!test_lwgpio(pinfo, tvb, 0, data)) /* This is not an Axia packet */ 
         return 0;
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-GPIO");
     col_clear(pinfo->cinfo,COL_INFO);
-
+    conversation_t *conversation = find_or_create_conversation(pinfo);
+    conversation_set_dissector(conversation, lwgpio_handle);
     proto_item *ti = proto_tree_add_item(tree, proto_lwgpio, tvb, 0, -1, ENC_NA);
     proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
     proto_tree_add_item(lwadv_tree, hf_lw_magic_num, tvb, 0, 4, ENC_NA);
@@ -600,15 +635,17 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 }
 static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
+    if (!test_lwclock(pinfo, tvb, 0, data))
+        return 0; // not clock
+    conversation_t *conversation = find_or_create_conversation(pinfo);
+    conversation_set_dissector(conversation, lwclock_handle);
     uint32_t timestamp;
     bool fast_rate = !cmp_address(&pinfo->net_dst, &fast_clock_address);
-    if (!fast_rate && cmp_address(&pinfo->net_dst, &slow_clock_address))
-        return 0; //if it isn't to eigher clock address, then we shouldn't proceed
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-CLOCK");
     col_set_str(pinfo->cinfo, COL_INFO, fast_rate ? "Fast Clock" : "Slow Clock");
     proto_item *ti = proto_tree_add_item(tree, proto_lwclock, tvb, 0, -1, ENC_NA);
     proto_tree *lwclock_tree = proto_item_add_subtree(ti, ett_lwadv);
-    proto_tree_add_item(lwclock_tree, hf_lw_clock_seq, tvb, 0, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item(lwclock_tree, hf_lw_clock_seq, tvb, 2, 2, ENC_BIG_ENDIAN);
     proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &timestamp);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_type, tvb, 20, 1, ENC_NA);
@@ -616,8 +653,20 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
     proto_tree_add_item(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA);
     ti = proto_tree_add_boolean(lwclock_tree, hf_lw_clock_rate, tvb, 0, 0, fast_rate);
     proto_item_set_generated(ti);
-    col_append_fstr(pinfo->cinfo, COL_INFO, ", Time=%d", timestamp);
+    col_append_fstr(pinfo->cinfo, COL_INFO, ", Time=%u", timestamp);
     return 36;
+}
+static bool dissect_lwadv_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    return (dissect_lwadv(tvb, pinfo, tree, data) != 0);
+}
+static bool dissect_lwgpio_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    return (dissect_lwgpio(tvb, pinfo, tree, data) != 0);
+}
+static bool dissect_lwclock_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    return (dissect_lwclock(tvb, pinfo, tree, data) != 0);
 }
 void proto_register_lwadv(void)
 {
@@ -672,7 +721,7 @@ void proto_register_lwadv(void)
         { &hf_lw_clock_mac,     { "Clock MAC Address",      "axia_clock.mac",               FT_ETHER,   BASE_NONE,  NULL,                   0x0,    NULL,   HFILL } },
         { &hf_lw_clock_samp,    { "Timstamp in samples",    "axia_clock.timestamp",         FT_UINT32,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
         { &hf_lw_clock_fast,    { "Timstamp in live packets","axia_clock.fast",             FT_UINT32,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
-        { &hf_lw_clock_seq,     { "Sequence",               "axia_clock.seq",               FT_UINT32,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
+        { &hf_lw_clock_seq,     { "Sequence",               "axia_clock.seq",               FT_UINT16,  BASE_DEC,   NULL,                   0x0,    NULL,   HFILL } },
         { &hf_lw_clock_rate,    { "Is Fast-Rate Clock",     "axia_clock.rate",              FT_BOOLEAN, BASE_NONE,  NULL,                   0x0,    NULL,   HFILL } },
         { &hf_lw_clock_type,    { "Clock message type",     "axia_clock.type",              FT_UINT8,   BASE_HEX,   VALS(clocktypenames),   0x0,    NULL,   HFILL } },
     };
@@ -704,31 +753,25 @@ void proto_register_lwadv(void)
         dissect_lwclock,
         proto_lwclock
     );
+    expert_lwadv = expert_register_protocol(proto_lwadv);
     lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     lwadv_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
+    heur_dissector_add("udp", dissect_lwadv_heur_udp, "Axia Livewire Source Advertisements over UDP", "lwadv_udp", proto_lwadv, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwgpio_heur_udp, "Axia Livewire GPIO over UDP", "lwgpio_udp", proto_lwgpio, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwclock_heur_udp, "Axia Livewire Clock over UDP", "lwclock_udp", proto_lwclock, HEURISTIC_ENABLE);
 }
 void proto_reg_handoff_lwadv(void)
 {
-    dissector_add_uint_with_preference("udp.port", LWADV_PORT, lwadv_handle);
-    dissector_add_uint_with_preference("udp.port", LWGPIO_CONSOLE_PORT, lwgpio_handle);
-    dissector_add_uint_with_preference("udp.port", LWGPIO_NODE_PORT, lwgpio_handle);
     uint32_t ip4_addr;
     str_to_ip(FAST_CLOCK_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_file_scope(), &fast_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &fast_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
     str_to_ip(SLOW_CLOCK_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_file_scope(), &slow_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    conversation_t *conversation = conversation_new(0, &fast_clock_address, NULL, CONVERSATION_UDP, FAST_CLOCK_PORT, 0, NO_ADDR2|NO_PORT2);
-    conversation_set_dissector(conversation, lwclock_handle);
-    conversation = conversation_new(0, &slow_clock_address, NULL, CONVERSATION_UDP, SLOW_CLOCK_PORT, 0, NO_ADDR2|NO_PORT2);
-    conversation_set_dissector(conversation, lwclock_handle);
-    return;
-    /*address adv_address;
-    uint32_t ip4_addr;
+    alloc_address_wmem(wmem_epan_scope(), &slow_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
     str_to_ip(LWADV_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_file_scope(), &adv_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    conversation_t *conversation = conversation_new(0, &adv_address, NULL, CONVERSATION_UDP, LWADV_PORT, 0, NO_ADDR2|NO_PORT2);
-    free_address_wmem(wmem_file_scope(), &adv_address);
-    conversation_set_dissector(conversation, lwadv_handle);*/
+    alloc_address_wmem(wmem_epan_scope(), &advertisement_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    str_to_ip(LWGPIO_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &gpio_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    return;
 }
 void plugin_register(void)
 {
