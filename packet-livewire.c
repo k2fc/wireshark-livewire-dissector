@@ -600,9 +600,9 @@ static bool test_lwclock(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void
         return false;
     return true;
 }
-static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data)
+static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    if (!test_lwadv(pinfo, tvb, 0, data)) /* This is not an Axia packet */ 
+    if (!validate_header(tvb)) /* This is not an Axia packet */ 
         return 0;
     conversation_t *conversation = find_or_create_conversation(pinfo);
     conversation_set_dissector(conversation, lwadv_handle);
