@@ -672,7 +672,6 @@ static bool dissect_lwclock_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tr
 }
 void proto_register_lwadv(void)
 {
-    expert_module_t* expert_lwadv;
     static hf_register_info hf[] = {
         { &hf_lw_magic_num,     { "Axia Magic Number",      "axia_adv.magic_number",       FT_NONE,    BASE_NONE,  NULL,                0x0,    NULL,   HFILL } },
         { &hf_lw_seq,           { "Sequence",               "axia_adv.seq",                FT_UINT32,  BASE_DEC,   NULL,                0x0,    NULL,   HFILL } },
@@ -755,7 +754,6 @@ void proto_register_lwadv(void)
         dissect_lwclock,
         proto_lwclock
     );
-    expert_lwadv = expert_register_protocol(proto_lwadv);
     lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     lwadv_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     heur_dissector_add("udp", dissect_lwadv_heur_udp, "Axia Livewire Source Advertisements over UDP", "lwadv_udp", proto_lwadv, HEURISTIC_ENABLE);
