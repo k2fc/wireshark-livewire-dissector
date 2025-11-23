@@ -572,40 +572,10 @@ static int dissect_lwadv_msg(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree
     }
     return offset + dissect_lwadv_unk(tvb, pinfo, tree, offset);
 }
-static bool test_lwadv(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void *data _U_)
-{
-    if (cmp_address(&pinfo->net_dst, &advertisement_address))
-        return false;
-    if (!validate_header(tvb))
-        return false;
-    return true;
-}
-static bool test_lwgpio(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void *data _U_)
-{
-    if (cmp_address(&pinfo->net_dst, &gpio_address))
-        return false;
-    if (!validate_header(tvb))
-        return false;
-    return true;
-}
-static bool test_lwclock(packet_info *pinfo, tvbuff_t *tvb, int offset _U_, void *data _U_)
-{
-    if (cmp_address(&pinfo->net_dst, &fast_clock_address) && cmp_address(&pinfo->net_dst, &slow_clock_address))
-        return false;
-    if (tvb_captured_length(tvb) != 36)
-        return false;
-    if (tvb_get_uint8(tvb, 0) != 0x90)
-        return false;
-    if (tvb_get_uint8(tvb, 1) != 0xff)
-        return false;
-    return true;
-}
 static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */ 
         return 0;
-    conversation_t *conversation = find_or_create_conversation(pinfo);
-    conversation_set_dissector(conversation, lwadv_handle);
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-ADV");
     col_clear(pinfo->cinfo,COL_INFO);
 
@@ -617,9 +587,9 @@ static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, vo
     dissect_lwadv_msg(tvb, pinfo, lwadv_tree, offset, SECTION_ADV_BASE, NULL);
     return offset;
 }
-static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data)
+static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    if (!test_lwgpio(pinfo, tvb, 0, data)) /* This is not an Axia packet */ 
+    if (!validate_header(tvb)) /* This is not an Axia packet */ 
         return 0;
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-GPIO");
     col_clear(pinfo->cinfo,COL_INFO);
@@ -635,8 +605,8 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 }
 static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    if (!test_lwclock(pinfo, tvb, 0, data))
-        return 0; // not clock
+    if (tvb_captured_length(tvb) != 36)
+        return 0;
     uint32_t timestamp;
     uint32_t seq;
 
@@ -658,17 +628,71 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
     col_append_fstr(pinfo->cinfo, COL_INFO, ", Seq=%u, Time=%u", seq, timestamp);
     return 36;
 }
+static bool test_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    if (cmp_address(&pinfo->net_dst, &advertisement_address))
+        return false;
+    if (!validate_header(tvb))
+        return false;
+    if (pinfo->destport != LWADV_PORT)
+        return false;
+    if (dissect_lwadv(tvb, pinfo, tree, data))
+    {
+        conversation_t *conversation = find_or_create_conversation(pinfo);
+        conversation_set_dissector(conversation, lwadv_handle);
+        return true;
+    }
+    return false;
+}
+static bool test_lwgpio(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    if (cmp_address(&pinfo->net_dst, &gpio_address))
+        return false;
+    if (pinfo->destport != LWGPIO_CONSOLE_PORT && pinfo->destport != LWGPIO_NODE_PORT)
+        return false;
+    if (!validate_header(tvb))
+        return false;
+    if (dissect_lwgpio(tvb, pinfo, tree, data))
+    {
+        conversation_t *conversation = find_or_create_conversation(pinfo);
+        conversation_set_dissector(conversation, lwgpio_handle);
+        return true;
+    }
+    return false;
+}
+static bool test_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    if (cmp_address(&pinfo->net_dst, &fast_clock_address) && cmp_address(&pinfo->net_dst, &slow_clock_address))
+        return false;
+    if (!cmp_address(&pinfo->net_dst, &fast_clock_address) && pinfo->destport != FAST_CLOCK_PORT)
+        return false;
+    if (!cmp_address(&pinfo->net_dst, &slow_clock_address) && pinfo->destport != SLOW_CLOCK_PORT)
+        return false;
+    if (tvb_captured_length(tvb) != 36)
+        return false;
+    if (tvb_get_uint8(tvb, 0) != 0x90)
+        return false;
+    if (tvb_get_uint8(tvb, 1) != 0xff)
+        return false;
+    if (dissect_lwclock(tvb, pinfo, tree, data))
+    {
+        conversation_t *conversation = find_or_create_conversation(pinfo);
+        conversation_set_dissector(conversation, lwclock_handle);
+        return true;
+    }
+    return false;
+}
 static bool dissect_lwadv_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-    return (dissect_lwadv(tvb, pinfo, tree, data) != 0);
+    return test_lwadv(tvb, pinfo, tree, data);
 }
 static bool dissect_lwgpio_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-    return (dissect_lwgpio(tvb, pinfo, tree, data) != 0);
+    return test_lwgpio(tvb, pinfo, tree, data);
 }
 static bool dissect_lwclock_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-    return (dissect_lwclock(tvb, pinfo, tree, data) != 0);
+    return test_lwclock(tvb, pinfo, tree, data);
 }
 void proto_register_lwadv(void)
 {
