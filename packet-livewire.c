@@ -754,9 +754,9 @@ void proto_register_lwadv(void)
         &ett_lwadv
     };
     
-    proto_lwadv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA-ADV", "axia_adv");
-    proto_lwgpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA-GPIO", "axia_gpio");
-    proto_lwclock = proto_register_protocol("Axia Livewire Clock", "AXIA-CLOCK", "axia_clock");
+    proto_lwadv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA Advertisement", "axia_adv");
+    proto_lwgpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA GPIO", "axia_gpio");
+    proto_lwclock = proto_register_protocol("Axia Livewire Clock", "AXIA Clock", "axia_clock");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     lwadv_handle = register_dissector_with_description(
@@ -779,9 +779,12 @@ void proto_register_lwadv(void)
     );
     lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     lwadv_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
-    heur_dissector_add("udp", dissect_lwadv_heur_udp, "Axia Livewire Source Advertisements over Multicast", "lwadv_udp", proto_lwadv, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_lwgpio_heur_udp, "Axia Livewire GPIO over Multicast", "lwgpio_udp", proto_lwgpio, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_lwclock_heur_udp, "Axia Livewire Clock over Multicast", "lwclock_udp", proto_lwclock, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwadv_heur_udp, "Axia Livewire Source Advertisement Heuristic Dissector", "axia_adv_heur", proto_lwadv, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwgpio_heur_udp, "Axia Livewire GPIO Heuristic Dissector", "axia_gpio_heur", proto_lwgpio, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwclock_heur_udp, "Axia Livewire Clock Heuristic Dissector", "axia_clock_heur", proto_lwclock, HEURISTIC_ENABLE);
+    dissector_add_for_decode_as("udp.port", lwadv_handle);
+    dissector_add_for_decode_as("udp.port", lwgpio_handle);
+    dissector_add_for_decode_as("udp.port", lwclock_handle);
 }
 void proto_reg_handoff_lwadv(void)
 {
