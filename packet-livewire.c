@@ -267,24 +267,24 @@ static int tree_add_value(proto_tree *tree, tvbuff_t *tvb, int offset, int hf)
 {
     switch (tvb_get_uint8(tvb, offset))
     {
-    case 0x0:
-    case 0x7:
-        proto_tree_add_item(tree, hf, tvb, offset + 1, 1, ENC_BIG_ENDIAN);
-        return 2;
-    case 0x1:
-        proto_tree_add_item(tree, hf, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
-        return 5;
-    case 0x3:
-        int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(tree, hf, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
-        return str_len + 3;
-    case 0x6:
-    case 0x8:
-        proto_tree_add_item(tree, hf, tvb, offset + 1, 2, ENC_BIG_ENDIAN);
-        return 3;
-    case 0x9:
-        proto_tree_add_item(tree, hf, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
-        return 9;
+        case 0x0:
+        case 0x7:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 1, ENC_BIG_ENDIAN);
+            return 2;
+        case 0x1:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
+            return 5;
+        case 0x3:
+            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tree, hf, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+            return str_len + 3;
+        case 0x6:
+        case 0x8:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 2, ENC_BIG_ENDIAN);
+            return 3;
+        case 0x9:
+            proto_tree_add_item(tree, hf, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
+            return 9;
     }
     return 0;
 }
@@ -297,29 +297,29 @@ static int dissect_lwadv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
     proto_item *ti;
     switch (tvb_get_uint8(tvb, offset))
     {
-    case 0x0:
-    case 0x7:
-        ti = proto_tree_add_item(tree, hf_lw_unk_u8, tvb, offset + 1, 1, ENC_BIG_ENDIAN);
-        len = 2;
-        break;
-    case 0x1:
-        ti = proto_tree_add_item(tree, hf_lw_unk_u32, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
-        len = 5;
-        break;
-    case 0x3:
-        int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-        ti = proto_tree_add_item(tree, hf_lw_unk_str, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
-        len = (str_len + 3);
-        break;
-    case 0x6:
-    case 0x8:
-        ti = proto_tree_add_item(tree, hf_lw_unk_u16, tvb, offset + 1, 2, ENC_BIG_ENDIAN);
-        len = 3;
-        break;
-    case 0x9:
-        ti = proto_tree_add_item(tree, hf_lw_unk_data, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
-        len = 9;
-        break;
+        case 0x0:
+        case 0x7:
+            ti = proto_tree_add_item(tree, hf_lw_unk_u8, tvb, offset + 1, 1, ENC_BIG_ENDIAN);
+            len = 2;
+            break;
+        case 0x1:
+            ti = proto_tree_add_item(tree, hf_lw_unk_u32, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
+            len = 5;
+            break;
+        case 0x3:
+            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+            ti = proto_tree_add_item(tree, hf_lw_unk_str, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+            len = (str_len + 3);
+            break;
+        case 0x6:
+        case 0x8:
+            ti = proto_tree_add_item(tree, hf_lw_unk_u16, tvb, offset + 1, 2, ENC_BIG_ENDIAN);
+            len = 3;
+            break;
+        case 0x9:
+            ti = proto_tree_add_item(tree, hf_lw_unk_data, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
+            len = 9;
+            break;
     }
     proto_item_append_text(ti, " (%s)", msg_type);
     return len;
@@ -357,301 +357,301 @@ static int dissect_lwadv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
         offset -= 4;
     switch (section)
     {
-    case SECTION_ADV_BASE:
-        ws_assert(msg_type);
-        if (strcmp(msg_type, "PVER") == 0)
-        {
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_pver);
-        }
-        else if (strcmp(msg_type, "ADVT") == 0)
-        {
-            col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(tvb_get_uint8(tvb, offset + 1), advtypenames, "Unknown Livewire Advertisement (0x%02x)"));
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_advt);
-        }
-        else if (strcmp(msg_type, "TERM") == 0)
-        {
-            int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            proto_item *ti = proto_tree_add_item(tree, hf_lw_term, tvb, offset - 4, len + 7, ENC_NA);
-            proto_tree *term_tree = proto_item_add_subtree(ti, ett_lwadv);
-            proto_item_set_text(ti, "Terminal Information");
-            info->term_info = wmem_new0(wmem_file_scope(), lw_term_info_t);
-            increment_dissection_depth(pinfo);
-            dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM, info);
-            decrement_dissection_depth(pinfo);
-            if (info->term_info->inip && info->term_info->atrn)
+        case SECTION_ADV_BASE:
+            ws_assert(msg_type);
+            if (strcmp(msg_type, "PVER") == 0)
             {
-                add_ipv4_name(info->term_info->inip, info->term_info->atrn, false);
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_pver);
             }
-            if (info->term_info->inip && info->term_info->udpc)
+            else if (strcmp(msg_type, "ADVT") == 0)
             {
-                setup_adv_conversation(pinfo, info->term_info);
+                col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(tvb_get_uint8(tvb, offset + 1), advtypenames, "Unknown Livewire Advertisement (0x%02x)"));
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_advt);
             }
-            return offset + len + 3;
-        }
-        else if (msg_type[0] == 'S' &&
-                 msg_type[1] >= '0' && msg_type[1] <= '9' &&
-                 msg_type[2] >= '0' && msg_type[2] <= '9' &&
-                 msg_type[3] >= '0' && msg_type[3] <= '9')
-        {
-            info->nums++;
-            int src_num = ((msg_type[1] - '0') * 100) + ((msg_type[2] - '0') * 10) + (msg_type[3] - '0');
-            int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            proto_item *ti = proto_tree_add_item(tree, hf_lw_src, tvb, offset - 4, len + 7, ENC_NA);
-            proto_tree *source_tree = proto_item_add_subtree(ti, ett_lwadv);
-            proto_item_set_text(ti, "Source %d", src_num);
-            info->src_info = wmem_new0(wmem_file_scope(), lw_src_info_t);
-            increment_dissection_depth(pinfo);
-            dissect_lwadv_msg(tvb, pinfo, source_tree, offset + 3, SECTION_SOURCE, info);
-            decrement_dissection_depth(pinfo);
-            if (info->term_info)
-                info->src_info->term = info->term_info;
-            proto_item_append_text(ti, ": %d", info->src_info->psid);
-            write_src_info(info);
-            if (info->src_info->psnm)
+            else if (strcmp(msg_type, "TERM") == 0)
             {
-                proto_item_append_text(ti, " [%s", info->src_info->psnm);
-                if (info->src_info->term && info->src_info->term->atrn)
+                int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                proto_item *ti = proto_tree_add_item(tree, hf_lw_term, tvb, offset - 4, len + 7, ENC_NA);
+                proto_tree *term_tree = proto_item_add_subtree(ti, ett_lwadv);
+                proto_item_set_text(ti, "Terminal Information");
+                info->term_info = wmem_new0(wmem_file_scope(), lw_term_info_t);
+                increment_dissection_depth(pinfo);
+                dissect_lwadv_msg(tvb, pinfo, term_tree, offset + 3, SECTION_TERM, info);
+                decrement_dissection_depth(pinfo);
+                if (info->term_info->inip && info->term_info->atrn)
                 {
-                    proto_item_append_text(ti, "@%s", info->src_info->term->atrn);
+                    add_ipv4_name(info->term_info->inip, info->term_info->atrn, false);
                 }
-                proto_item_append_text(ti, "]");
-                if (!info->src_info->setup_frame)
-                    info->src_info->setup_frame = pinfo->num;
-                else if (info->src_info->setup_frame != pinfo->num)
+                if (info->term_info->inip && info->term_info->udpc)
                 {
-                    ti = proto_tree_add_uint(source_tree, hf_lw_src_setup_frm, tvb, 0, 0, info->src_info->setup_frame);
-                    proto_item_set_generated(ti);
+                    setup_adv_conversation(pinfo, info->term_info);
                 }
-                if (info->src_info->fsid && info->src_info->bsid)
+                return offset + len + 3;
+            }
+            else if (msg_type[0] == 'S' &&
+                    msg_type[1] >= '0' && msg_type[1] <= '9' &&
+                    msg_type[2] >= '0' && msg_type[2] <= '9' &&
+                    msg_type[3] >= '0' && msg_type[3] <= '9')
+            {
+                info->nums++;
+                int src_num = ((msg_type[1] - '0') * 100) + ((msg_type[2] - '0') * 10) + (msg_type[3] - '0');
+                int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                proto_item *ti = proto_tree_add_item(tree, hf_lw_src, tvb, offset - 4, len + 7, ENC_NA);
+                proto_tree *source_tree = proto_item_add_subtree(ti, ett_lwadv);
+                proto_item_set_text(ti, "Source %d", src_num);
+                info->src_info = wmem_new0(wmem_file_scope(), lw_src_info_t);
+                increment_dissection_depth(pinfo);
+                dissect_lwadv_msg(tvb, pinfo, source_tree, offset + 3, SECTION_SOURCE, info);
+                decrement_dissection_depth(pinfo);
+                if (info->term_info)
+                    info->src_info->term = info->term_info;
+                proto_item_append_text(ti, ": %d", info->src_info->psid);
+                write_src_info(info);
+                if (info->src_info->psnm)
                 {
-                    bool is_mm = info->src_info->bsid == info->src_info->fsid;
-                    ti = proto_tree_add_boolean(source_tree, hf_lw_src_is_mm,
-                                                tvb, 0, 0, is_mm);
-                    if (is_mm)
+                    proto_item_append_text(ti, " [%s", info->src_info->psnm);
+                    if (info->src_info->term && info->src_info->term->atrn)
                     {
-                        proto_item_set_text(ti, "Source is a backfeed");
+                        proto_item_append_text(ti, "@%s", info->src_info->term->atrn);
                     }
-                    else
+                    proto_item_append_text(ti, "]");
+                    if (!info->src_info->setup_frame)
+                        info->src_info->setup_frame = pinfo->num;
+                    else if (info->src_info->setup_frame != pinfo->num)
                     {
-                        proto_item_set_hidden(ti);
+                        ti = proto_tree_add_uint(source_tree, hf_lw_src_setup_frm, tvb, 0, 0, info->src_info->setup_frame);
+                        proto_item_set_generated(ti);
                     }
-                    proto_item_set_generated(ti);
+                    if (info->src_info->fsid && info->src_info->bsid)
+                    {
+                        bool is_mm = info->src_info->bsid == info->src_info->fsid;
+                        ti = proto_tree_add_boolean(source_tree, hf_lw_src_is_mm,
+                                                    tvb, 0, 0, is_mm);
+                        if (is_mm)
+                        {
+                            proto_item_set_text(ti, "Source is a backfeed");
+                        }
+                        else
+                        {
+                            proto_item_set_hidden(ti);
+                        }
+                        proto_item_set_generated(ti);
+                    }
                 }
+                setup_lw_transport(pinfo, info->src_info->psid);
+                return offset + len + 3;
             }
-            setup_lw_transport(pinfo, info->src_info->psid);
-            return offset + len + 3;
-        }
-        break;
-    case SECTION_TERM:
-        ws_assert(msg_type);
-        if (strcmp(msg_type, "INIP") == 0)
-        {
-            info->term_info->inip = tvb_get_ipv4(tvb, offset + 1);
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_inip);
-        }
-        else if (strcmp(msg_type, "HWID") == 0)
-        {
-            info->term_info->hwid = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            lw_term_info_t *existing = (lw_term_info_t *)wmem_tree_lookup32(lwadv_nodes, info->term_info->hwid);
-            if (existing)
+            break;
+        case SECTION_TERM:
+            ws_assert(msg_type);
+            if (strcmp(msg_type, "INIP") == 0)
             {
-                if (info->term_info->atrn)
-                    existing->atrn = info->term_info->atrn;
-                if (info->term_info->inip)
-                    existing->inip = info->term_info->inip;
-                if (info->term_info->udpc)
-                    existing->udpc = info->term_info->udpc;
-                wmem_free(wmem_file_scope(), info->term_info);
-                info->term_info = existing;
+                info->term_info->inip = tvb_get_ipv4(tvb, offset + 1);
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_inip);
+            }
+            else if (strcmp(msg_type, "HWID") == 0)
+            {
+                info->term_info->hwid = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                lw_term_info_t *existing = (lw_term_info_t *)wmem_tree_lookup32(lwadv_nodes, info->term_info->hwid);
+                if (existing)
+                {
+                    if (info->term_info->atrn)
+                        existing->atrn = info->term_info->atrn;
+                    if (info->term_info->inip)
+                        existing->inip = info->term_info->inip;
+                    if (info->term_info->udpc)
+                        existing->udpc = info->term_info->udpc;
+                    wmem_free(wmem_file_scope(), info->term_info);
+                    info->term_info = existing;
+                }
+                else
+                {
+                    wmem_tree_insert32(lwadv_nodes, info->term_info->hwid, (void *)info->term_info);
+                }
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_hwid);
+            }
+            else if (strcmp(msg_type, "ADVV") == 0)
+            {
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_advv);
+            }
+            else if (strcmp(msg_type, "UDPC") == 0)
+            {
+                info->term_info->udpc = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_udpc);
+            }
+            else if (strcmp(msg_type, "NUMS") == 0)
+            {
+                info->term_info->nums = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_nums);
+            }
+            else if (strcmp(msg_type, "ATRN") == 0)
+            {
+                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                char *atrn = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                info->term_info->atrn = atrn;
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_atrn);
+            }
+            else if (strcmp(msg_type, "TYPE") == 0)
+            {
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_term_type);
+            }
+            break;
+        case SECTION_SOURCE:
+            ws_assert(msg_type);
+            if (strcmp(msg_type, "PSID") == 0)
+            {
+                info->src_info->psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
+                /*
+                lw_src_info_t *existing = (lw_src_info_t *)wmem_tree_lookup32(lwadv_sources, info->src_info->psid);
+                if (existing) {
+                    if (info->src_info->psnm) existing->psnm = info->src_info->psnm;
+                    if (info->src_info->term) existing->term = info->src_info->term;
+                    if (info->src_info->fsid) existing->fsid = info->src_info->fsid;
+                    wmem_free(wmem_file_scope(), info->src_info);
+                    info->src_info = existing;
+                }
+                else {
+                    wmem_tree_insert32(lwadv_sources, info->src_info->psid, (void *)info->src_info);
+                }
+                */
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psid);
+            }
+            else if (strcmp(msg_type, "PSNM") == 0)
+            {
+                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                char *psnm = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                info->src_info->psnm = psnm;
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psnm);
+            }
+            else if (strcmp(msg_type, "FSID") == 0)
+            {
+                ws_in4_addr fsid = tvb_get_ipv4(tvb, offset + 1);
+                info->src_info->fsid = fsid;
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_fsid);
+            }
+            else if (strcmp(msg_type, "BSID") == 0)
+            {
+                info->src_info->bsid = tvb_get_ipv4(tvb, offset + 1);
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_bsid);
+            }
+            else if (strcmp(msg_type, "SHAB") == 0)
+            {
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_shab);
+            }
+            else if (strcmp(msg_type, "LPID") == 0)
+            {
+                return offset + tree_add_value(tree, tvb, offset, hf_lw_src_lpid);
+            }
+            else if (strcmp(msg_type, "BUSY") == 0 && tvb_get_uint8(tvb, offset) == 0x9)
+            {
+                proto_item *ti = proto_tree_add_item(tree, hf_lw_busy, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
+                if (tvb_get_uint64(tvb, offset + 1, ENC_BIG_ENDIAN) == 0)
+                {
+                    // free
+                    proto_item_append_text(ti, ": Free");
+                }
+                else
+                {
+                    ws_in4_addr console_ip;
+                    uint32_t prefix;
+                    uint32_t hwid;
+                    unsigned fader_num;
+                    char addr_str[16];
+                    proto_tree *busy_tree = proto_item_add_subtree(ti, ett_lwadv);
+                    proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_hwid, tvb, offset + 3, 2, ENC_BIG_ENDIAN, &hwid);
+                    proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_prefix, tvb, offset + 7, 2, ENC_BIG_ENDIAN, &prefix);
+                    console_ip = (ws_in4_addr)((g_htonl(prefix) >> 16) + g_htonl(hwid));
+                    ws_inet_ntop4(&console_ip, addr_str, sizeof(addr_str));
+                    proto_tree_add_ipv4(busy_tree, hf_lw_busy_ip, tvb, offset + 3, 6, console_ip);
+                    proto_item *fader = proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_fader, tvb, offset + 6, 1, ENC_BIG_ENDIAN, &fader_num);
+                    proto_item_set_text(fader, "Fader: %d", fader_num + 1);
+                    lw_term_info_t *console = wmem_tree_lookup32(lwadv_nodes, tvb_get_uint16(tvb, offset + 3, ENC_BIG_ENDIAN));
+                    bool have_name = false;
+                    if (console && console->atrn)
+                        have_name = true;
+                    proto_item_append_text(ti, " [Console %s, Fader %d]", have_name ? console->atrn : addr_str, fader_num + 1);
+                }
+                return offset + 9;
+            }
+            break;
+        case SECTION_GPIO:
+            uint32_t lpid;
+            uint32_t lcid;
+            uint32_t state;
+            uint32_t mult;
+            uint32_t len;
+            bool gpi = false;
+            bool source_is_new = false;
+            proto_item *ti = proto_tree_add_item(tree, hf_lw_gpio, tvb, offset + 1, 5, ENC_NA);
+            proto_tree *gpio_tree = proto_item_add_subtree(ti, ett_lwadv);
+            proto_item *lpid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
+            if (lpid != 0xFF)
+            {
+                if (info->lpid != lpid)
+                    source_is_new = true;
+                info->lpid = lpid;
             }
             else
+                lpid = info->lpid;
+            lw_src_info_t *source = wmem_tree_lookup32(lwadv_sources, lpid);
+            lw_term_info_t *term;
+            if (source)
+                term = source->term;
+            if (source && source->psnm && term && term->atrn)
             {
-                wmem_tree_insert32(lwadv_nodes, info->term_info->hwid, (void *)info->term_info);
+                proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
+                proto_tree *setup_tree = proto_item_add_subtree(lpid_item, ett_lwadv);
+                proto_item *setup_frm = proto_tree_add_uint(setup_tree, hf_lw_src_setup_frm, tvb, 0, 0, source->setup_frame);
+                proto_item_set_generated(setup_frm);
             }
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_hwid);
-        }
-        else if (strcmp(msg_type, "ADVV") == 0)
-        {
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_advv);
-        }
-        else if (strcmp(msg_type, "UDPC") == 0)
-        {
-            info->term_info->udpc = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_udpc);
-        }
-        else if (strcmp(msg_type, "NUMS") == 0)
-        {
-            info->term_info->nums = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_nums);
-        }
-        else if (strcmp(msg_type, "ATRN") == 0)
-        {
-            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            char *atrn = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
-            info->term_info->atrn = atrn;
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_atrn);
-        }
-        else if (strcmp(msg_type, "TYPE") == 0)
-        {
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_term_type);
-        }
-        break;
-    case SECTION_SOURCE:
-        ws_assert(msg_type);
-        if (strcmp(msg_type, "PSID") == 0)
-        {
-            info->src_info->psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
-            /*
-            lw_src_info_t *existing = (lw_src_info_t *)wmem_tree_lookup32(lwadv_sources, info->src_info->psid);
-            if (existing) {
-                if (info->src_info->psnm) existing->psnm = info->src_info->psnm;
-                if (info->src_info->term) existing->term = info->src_info->term;
-                if (info->src_info->fsid) existing->fsid = info->src_info->fsid;
-                wmem_free(wmem_file_scope(), info->src_info);
-                info->src_info = existing;
-            }
-            else {
-                wmem_tree_insert32(lwadv_sources, info->src_info->psid, (void *)info->src_info);
-            }
-            */
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psid);
-        }
-        else if (strcmp(msg_type, "PSNM") == 0)
-        {
-            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            char *psnm = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
-            info->src_info->psnm = psnm;
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_src_psnm);
-        }
-        else if (strcmp(msg_type, "FSID") == 0)
-        {
-            ws_in4_addr fsid = tvb_get_ipv4(tvb, offset + 1);
-            info->src_info->fsid = fsid;
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_src_fsid);
-        }
-        else if (strcmp(msg_type, "BSID") == 0)
-        {
-            info->src_info->bsid = tvb_get_ipv4(tvb, offset + 1);
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_src_bsid);
-        }
-        else if (strcmp(msg_type, "SHAB") == 0)
-        {
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_src_shab);
-        }
-        else if (strcmp(msg_type, "LPID") == 0)
-        {
-            return offset + tree_add_value(tree, tvb, offset, hf_lw_src_lpid);
-        }
-        else if (strcmp(msg_type, "BUSY") == 0 && tvb_get_uint8(tvb, offset) == 0x9)
-        {
-            proto_item *ti = proto_tree_add_item(tree, hf_lw_busy, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
-            if (tvb_get_uint64(tvb, offset + 1, ENC_BIG_ENDIAN) == 0)
-            {
-                // free
-                proto_item_append_text(ti, ": Free");
-            }
+            proto_item *lcid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
+            if (lcid < 9)
+                lcid = 9 - lcid;
             else
             {
-                ws_in4_addr console_ip;
-                uint32_t prefix;
-                uint32_t hwid;
-                unsigned fader_num;
-                char addr_str[16];
-                proto_tree *busy_tree = proto_item_add_subtree(ti, ett_lwadv);
-                proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_hwid, tvb, offset + 3, 2, ENC_BIG_ENDIAN, &hwid);
-                proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_prefix, tvb, offset + 7, 2, ENC_BIG_ENDIAN, &prefix);
-                console_ip = (ws_in4_addr)((g_htonl(prefix) >> 16) + g_htonl(hwid));
-                ws_inet_ntop4(&console_ip, addr_str, sizeof(addr_str));
-                proto_tree_add_ipv4(busy_tree, hf_lw_busy_ip, tvb, offset + 3, 6, console_ip);
-                proto_item *fader = proto_tree_add_item_ret_uint(busy_tree, hf_lw_busy_fader, tvb, offset + 6, 1, ENC_BIG_ENDIAN, &fader_num);
-                proto_item_set_text(fader, "Fader: %d", fader_num + 1);
-                lw_term_info_t *console = wmem_tree_lookup32(lwadv_nodes, tvb_get_uint16(tvb, offset + 3, ENC_BIG_ENDIAN));
-                bool have_name = false;
-                if (console && console->atrn)
-                    have_name = true;
-                proto_item_append_text(ti, " [Console %s, Fader %d]", have_name ? console->atrn : addr_str, fader_num + 1);
+                lcid = 14 - lcid;
+                gpi = true;
             }
-            return offset + 9;
-        }
-        break;
-    case SECTION_GPIO:
-        uint32_t lpid;
-        uint32_t lcid;
-        uint32_t state;
-        uint32_t mult;
-        uint32_t len;
-        bool gpi = false;
-        bool source_is_new = false;
-        proto_item *ti = proto_tree_add_item(tree, hf_lw_gpio, tvb, offset + 1, 5, ENC_NA);
-        proto_tree *gpio_tree = proto_item_add_subtree(ti, ett_lwadv);
-        proto_item *lpid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
-        if (lpid != 0xFF)
-        {
-            if (info->lpid != lpid)
-                source_is_new = true;
-            info->lpid = lpid;
-        }
-        else
-            lpid = info->lpid;
-        lw_src_info_t *source = wmem_tree_lookup32(lwadv_sources, lpid);
-        lw_term_info_t *term;
-        if (source)
-            term = source->term;
-        if (source && source->psnm && term && term->atrn)
-        {
-            proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
-            proto_tree *setup_tree = proto_item_add_subtree(lpid_item, ett_lwadv);
-            proto_item *setup_frm = proto_tree_add_uint(setup_tree, hf_lw_src_setup_frm, tvb, 0, 0, source->setup_frame);
-            proto_item_set_generated(setup_frm);
-        }
-        proto_item *lcid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_lcid, tvb, offset + 3, 1, ENC_BIG_ENDIAN, &lcid);
-        if (lcid < 9)
-            lcid = 9 - lcid;
-        else
-        {
-            lcid = 14 - lcid;
-            gpi = true;
-        }
-        proto_item_append_text(lcid_item, gpi ? " [GPI Pin %d]" : " [GPO Pin %d]", lcid);
-        proto_item *pmult_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
-        proto_item *state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
-        proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
-        len *= mult ? 20 : 500;
-        if (!state && !mult && !len)
-        {
-            proto_item_append_text(state_item, " [Ignored]");
-            state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
-        }
-        proto_item_append_text(state_item, " [%s]", state ? "Low" : "High");
-        proto_item_append_text(pmult_item, " [%s]", mult ? "20 mS" : "500 mS");
-        if (len)
-            proto_item_append_text(plen_item, " [%d mS]", len);
-        proto_item_append_text(ti, ": LPID=%d ", lpid);
-        if (source_is_new)
-            col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
-        if (source && source->psnm && term && term->atrn)
-        {
-            proto_item_append_text(ti, "[%s@%s] ", source->psnm, term->atrn);
+            proto_item_append_text(lcid_item, gpi ? " [GPI Pin %d]" : " [GPO Pin %d]", lcid);
+            proto_item *pmult_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
+            proto_item *state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+            proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
+            len *= mult ? 20 : 500;
+            if (!state && !mult && !len)
+            {
+                proto_item_append_text(state_item, " [Ignored]");
+                state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_lw_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+            }
+            proto_item_append_text(state_item, " [%s]", state ? "Low" : "High");
+            proto_item_append_text(pmult_item, " [%s]", mult ? "20 mS" : "500 mS");
+            if (len)
+                proto_item_append_text(plen_item, " [%d mS]", len);
+            proto_item_append_text(ti, ": LPID=%d ", lpid);
             if (source_is_new)
-                col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
+                col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
+            if (source && source->psnm && term && term->atrn)
+            {
+                proto_item_append_text(ti, "[%s@%s] ", source->psnm, term->atrn);
+                if (source_is_new)
+                    col_append_fstr(pinfo->cinfo, COL_INFO, "[%s@%s] ", source->psnm, term->atrn);
+            }
+            proto_item_append_text(ti, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
+            col_append_fstr(pinfo->cinfo, COL_INFO, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
+            if (len)
+            {
+                proto_item_append_text(ti, "Pulse ");
+                col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
+            }
+            proto_item_append_text(ti, "%s ", state ? "Low" : "High");
+            col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", state ? "Low" : "High");
+            if (len)
+            {
+                proto_item_append_text(ti, "for %dmS ", len);
+                col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
+            }
+            return offset + 6;
+            break;
         }
-        proto_item_append_text(ti, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
-        col_append_fstr(pinfo->cinfo, COL_INFO, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
-        if (len)
-        {
-            proto_item_append_text(ti, "Pulse ");
-            col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
-        }
-        proto_item_append_text(ti, "%s ", state ? "Low" : "High");
-        col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", state ? "Low" : "High");
-        if (len)
-        {
-            proto_item_append_text(ti, "for %dmS ", len);
-            col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
-        }
-        return offset + 6;
-        break;
-    }
     return offset + dissect_lwadv_unk(tvb, pinfo, tree, offset);
 }
 static int dissect_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
@@ -819,7 +819,7 @@ void proto_register_lwadv(void)
         {&hf_lw_gpio_state,     {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x40,           NULL,                                           HFILL}},
         {&hf_lw_gpio_state2,    {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x01,           NULL,                                           HFILL}},
         {&hf_lw_gpio_pmult,     {"Pulse length multipier",      "axia_gpio.pulse_len_mult", FT_UINT8,       BASE_DEC,   NULL,                   0x80,           NULL,                                           HFILL}},
-        {&hf_lw_gpio_plen,      {"Pulse length",                "axia_gpio.pulse_len"       FT_UINT8,       BASE_DEC,   NULL,                   0x3E,           NULL,                                           HFILL}},
+        {&hf_lw_gpio_plen,      {"Pulse length",                "axia_gpio.pulse_len",      FT_UINT8,       BASE_DEC,   NULL,                   0x3E,           NULL,                                           HFILL}},
 
         {&hf_lw_clock_hwid,     {"Clock Hardware ID",           "axia_clock.hwid",          FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_lw_clock_prio,     {"Priority",                    "axia_clock.priority",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
