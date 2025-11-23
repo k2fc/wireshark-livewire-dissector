@@ -193,7 +193,8 @@ static void setup_lw_transport(packet_info *pinfo, uint16_t psid){
     }
 }
 static void setup_adv_conversation(packet_info *pinfo, lw_term_info_t *term_info) {
-    if (term_info->conversation) return;
+    if (term_info->conversation) 
+        return;
     if (term_info->inip && term_info->udpc){
         address node_address;
         alloc_address_wmem(wmem_file_scope(), &node_address, AT_IPv4, sizeof(ws_in4_addr), &term_info->inip);
@@ -593,8 +594,6 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
         return 0;
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
     col_clear(pinfo->cinfo,COL_INFO);
-    conversation_t *conversation = find_or_create_conversation(pinfo);
-    conversation_set_dissector(conversation, lwgpio_handle);
     proto_item *ti = proto_tree_add_item(tree, proto_lwgpio, tvb, 0, -1, ENC_NA);
     proto_tree *lwadv_tree = proto_item_add_subtree(ti, ett_lwadv);
     proto_tree_add_item(lwadv_tree, hf_lw_magic_num, tvb, 0, 4, ENC_NA);
@@ -612,6 +611,7 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
     uint32_t type;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
+    col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_lwclock, tvb, 0, -1, ENC_NA);
     proto_tree *lwclock_tree = proto_item_add_subtree(ti, ett_lwadv);
     proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_seq, tvb, 2, 2, ENC_BIG_ENDIAN, &seq);
@@ -624,8 +624,7 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
     bool fast_rate = type == 0x0a || type == 0x0b;
     ti = proto_tree_add_boolean(lwclock_tree, hf_lw_clock_rate, tvb, 0, 0, fast_rate);
     proto_item_set_generated(ti);
-    col_set_str(pinfo->cinfo, COL_INFO, fast_rate ? "Fast Clock" : "Slow Clock");
-    col_append_fstr(pinfo->cinfo, COL_INFO, ", Seq=%u, Time=%u", seq, timestamp);
+    col_append_fstr(pinfo->cinfo, COL_INFO, "%s, Seq=%u, Time=%u", val_to_str_const(type, clocktypenames, "Unknown clock packet"), seq, timestamp);
     return 36;
 }
 static bool test_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -780,9 +779,9 @@ void proto_register_lwadv(void)
     );
     lwadv_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     lwadv_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
-    heur_dissector_add("udp", dissect_lwadv_heur_udp, "Axia Livewire Source Advertisements over UDP", "lwadv_udp", proto_lwadv, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_lwgpio_heur_udp, "Axia Livewire GPIO over UDP", "lwgpio_udp", proto_lwgpio, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_lwclock_heur_udp, "Axia Livewire Clock over UDP", "lwclock_udp", proto_lwclock, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwadv_heur_udp, "Axia Livewire Source Advertisements over Multicast", "lwadv_udp", proto_lwadv, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwgpio_heur_udp, "Axia Livewire GPIO over Multicast", "lwgpio_udp", proto_lwgpio, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", dissect_lwclock_heur_udp, "Axia Livewire Clock over Multicast", "lwclock_udp", proto_lwclock, HEURISTIC_ENABLE);
 }
 void proto_reg_handoff_lwadv(void)
 {
