@@ -576,7 +576,7 @@ static int dissect_lwadv(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, vo
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */ 
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-ADV");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
     col_clear(pinfo->cinfo,COL_INFO);
 
     proto_item *ti = proto_tree_add_item(tree, proto_lwadv, tvb, 0, -1, ENC_NA);
@@ -591,7 +591,7 @@ static int dissect_lwgpio(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, v
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */ 
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-GPIO");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
     col_clear(pinfo->cinfo,COL_INFO);
     conversation_t *conversation = find_or_create_conversation(pinfo);
     conversation_set_dissector(conversation, lwgpio_handle);
@@ -613,7 +613,7 @@ static int dissect_lwclock(tvbuff_t* tvb, packet_info *pinfo, proto_tree *tree, 
     conversation_t *conversation = find_or_create_conversation(pinfo);
     conversation_set_dissector(conversation, lwclock_handle);
     bool fast_rate = !cmp_address(&pinfo->net_dst, &fast_clock_address);
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW-CLOCK");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
     col_set_str(pinfo->cinfo, COL_INFO, fast_rate ? "Fast Clock" : "Slow Clock");
     proto_item *ti = proto_tree_add_item(tree, proto_lwclock, tvb, 0, -1, ENC_NA);
     proto_tree *lwclock_tree = proto_item_add_subtree(ti, ett_lwadv);
