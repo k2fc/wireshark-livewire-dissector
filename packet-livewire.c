@@ -5,6 +5,7 @@
 #include <epan/conversation.h>
 #include <epan/dissectors/packet-rtp.h>
 #include <math.h>
+#include <epan/expert.h>
 
 #ifndef VERSION
 #define VERSION "0.0.0"
@@ -87,6 +88,8 @@ static int hf_lw_clock_type;
 
 static int ett_lwadv;
 
+static expert_field ei_axia_clock_changed;
+
 static wmem_tree_t *lwadv_sources;
 static wmem_tree_t *lwadv_nodes;
 
@@ -94,6 +97,8 @@ static address fast_clock_address;
 static address slow_clock_address;
 static address advertisement_address;
 static address gpio_address;
+
+static address livewire_master_clock_mac;
 
 typedef enum
 {
@@ -690,6 +695,8 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     uint32_t timestamp;
     uint32_t seq;
     uint32_t type;
+    uint8_t mac_address[FT_ETHER_LEN];
+    address current_clock_mac;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
     col_clear(pinfo->cinfo, COL_INFO);
@@ -700,7 +707,18 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     proto_tree_add_item(lwclock_tree, hf_lw_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
     proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_type, tvb, 20, 1, ENC_NA, &type);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_prio, tvb, 27, 1, ENC_NA);
-    proto_tree_add_item(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA);
+    ti = proto_tree_add_item_ret_ether(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA, mac_address);
+    alloc_address_wmem(wmem_file_scope(), &current_clock_mac, AT_ETHER, sizeof(mac_address), mac_address);
+    if (cmp_address(&current_clock_mac, &livewire_master_clock_mac))
+    {
+        // they do not equal, so the clock has changed... or something
+        livewire_master_clock_mac = current_clock_mac;
+        expert_add_info(pinfo, ti, &ei_axia_clock_changed);
+    }
+    else
+    {
+        free_address_wmem(wmem_file_scope(), &current_clock_mac);
+    }
 
     bool fast_rate = type == 0x0a || type == 0x0b;
     ti = proto_tree_add_boolean(lwclock_tree, hf_lw_clock_rate, tvb, 0, 0, fast_rate);
@@ -776,6 +794,7 @@ static bool dissect_lwclock_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tr
 }
 void proto_register_lwadv(void)
 {
+    expert_module_t* expert_livewire;
     static hf_register_info hf[] = {
         {&hf_lw_magic_num,      {"Axia Magic Number",           "axia_adv.magic_number",    FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_lw_seq,            {"Sequence",                    "axia_adv.seq",             FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
@@ -830,7 +849,9 @@ void proto_register_lwadv(void)
         {&hf_lw_clock_rate,     {"Is Fast-Rate Clock",          "axia_clock.rate",          FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_lw_clock_type,     {"Clock message type",          "axia_clock.type",          FT_UINT8,       BASE_HEX,   VALS(clocktypenames),   0x0,            NULL,                                           HFILL}},
     };
-
+    static ei_register_info ei[] = {
+        { &ei_axia_clock_changed, {"axia_clock.masterchanged", PI_PROTOCOL, PI_WARN, "Livewire Master Clock Changed", EXPFILL }},
+    };
     static int *ett[] = {
         &ett_lwadv};
 
@@ -839,6 +860,10 @@ void proto_register_lwadv(void)
     proto_lwclock = proto_register_protocol("Axia Livewire Clock", "AXIA Clock", "axia_clock");
     proto_register_field_array(proto_lwadv, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
+
+    expert_livewire = expert_register_protocol(proto_lwadv);
+    expert_register_field_array(expert_livewire, ei, array_length(ei));
+
     lwadv_handle = register_dissector_with_description(
         "livewire-adv",
         "Axia Livewire Source Advertisement Protocol",
