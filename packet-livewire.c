@@ -98,8 +98,6 @@ static address slow_clock_address;
 static address advertisement_address;
 static address gpio_address;
 
-static address livewire_master_clock_mac;
-
 typedef enum
 {
     SECTION_ADV_BASE,
@@ -117,6 +115,7 @@ typedef struct
     conversation_t *conversation;
     uint32_t nums;
 } lw_term_info_t;
+
 typedef struct
 {
     uint32_t psid;
@@ -135,6 +134,14 @@ typedef struct
     int16_t lpid;
     int32_t nums;
 } lw_info_t;
+
+typedef struct
+{
+    address mac_address;
+    uint32_t priority;
+} lw_clock_t;
+
+static lw_clock_t lw_master_clock;
 
 static dissector_handle_t lwadv_handle;
 static dissector_handle_t lwgpio_handle;
@@ -695,6 +702,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     uint32_t timestamp;
     uint32_t seq;
     uint32_t type;
+    uint32_t priority;
     uint8_t mac_address[FT_ETHER_LEN];
     address current_clock_mac;
 
@@ -706,13 +714,14 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &timestamp);
     proto_tree_add_item(lwclock_tree, hf_lw_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
     proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_type, tvb, 20, 1, ENC_NA, &type);
-    proto_tree_add_item(lwclock_tree, hf_lw_clock_prio, tvb, 27, 1, ENC_NA);
+    proto_tree_add_item_ret_uint(lwclock_tree, hf_lw_clock_prio, tvb, 27, 1, ENC_NA, &priority);
     ti = proto_tree_add_item_ret_ether(lwclock_tree, hf_lw_clock_mac, tvb, 30, 6, ENC_NA, mac_address);
     alloc_address_wmem(wmem_file_scope(), &current_clock_mac, AT_ETHER, sizeof(mac_address), mac_address);
-    if (cmp_address(&current_clock_mac, &livewire_master_clock_mac))
+    if (cmp_address(&current_clock_mac, &lw_master_clock.mac_address) || lw_master_clock.priority != priority)
     {
         // they do not equal, so the clock has changed... or something
-        livewire_master_clock_mac = current_clock_mac;
+        lw_master_clock.mac_address = current_clock_mac;
+        lw_master_clock.priority = priority;
         expert_add_info(pinfo, ti, &ei_axia_clock_changed);
     }
     else
@@ -723,8 +732,9 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     bool fast_rate = type == 0x0a || type == 0x0b;
     ti = proto_tree_add_boolean(lwclock_tree, hf_lw_clock_rate, tvb, 0, 0, fast_rate);
     proto_item_set_generated(ti);
-    col_append_fstr(pinfo->cinfo, COL_INFO, "%s, Seq=%u, Time=%u", val_to_str_const(type, clocktypenames, "Unknown clock packet"), seq, timestamp);
-    return 36;
+    col_append_fstr(pinfo->cinfo, COL_INFO, "%s, Seq=%u, Priority=%u, Time=%u",
+        val_to_str_const(type, clocktypenames, "Unknown clock packet"), seq, priority, timestamp);
+    return tvb_captured_length(tvb);
 }
 static bool test_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
