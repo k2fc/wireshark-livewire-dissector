@@ -86,7 +86,9 @@ static int hf_axia_clock_seq;
 static int hf_axia_clock_rate;
 static int hf_axia_clock_type;
 
-static int ett_lwadv;
+static int ett_axia_adv;
+static int ett_axia_gpio;
+static int ett_axia_clock;
 
 static expert_field ei_axia_clock_changed;
 
@@ -306,7 +308,7 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
         return 0;
     int len = 0;
     unsigned char *msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
-    proto_item *ti;
+    proto_item *ti = NULL;
     switch (tvb_get_uint8(tvb, offset))
     {
         case 0x0:
@@ -333,7 +335,8 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             len = 9;
             break;
     }
-    proto_item_append_text(ti, " (%s)", msg_type);
+    if (ti)
+        proto_item_append_text(ti, " (%s)", msg_type);
     return len;
 }
 static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset, axia_adv_section_e section, axia_adv_info_t *info)
@@ -350,7 +353,6 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
         int msg_count = tvb_get_uint8(tvb, offset + 1);
         proto_tree_add_string_format(tree, hf_axia_opcode, tvb, offset - 4, 4, msg_type,
                                      "Operation: %s (%s)", get_opcode_description(msg_type), msg_type);
-        // proto_tree *nest_tree = proto_item_add_subtree(ti, ett_lwadv);
         offset += tree_add_value(tree, tvb, offset, hf_axia_msg_count);
         for (int i = 0; i < msg_count; i++)
         {
@@ -384,7 +386,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             {
                 int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
                 proto_item *ti = proto_tree_add_item(tree, hf_axia_term, tvb, offset - 4, len + 7, ENC_NA);
-                proto_tree *term_tree = proto_item_add_subtree(ti, ett_lwadv);
+                proto_tree *term_tree = proto_item_add_subtree(ti, ett_axia_adv);
                 proto_item_set_text(ti, "Terminal Information");
                 info->term_info = wmem_new0(wmem_file_scope(), axia_term_info_t);
                 increment_dissection_depth(pinfo);
@@ -409,7 +411,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 int src_num = ((msg_type[1] - '0') * 100) + ((msg_type[2] - '0') * 10) + (msg_type[3] - '0');
                 int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
                 proto_item *ti = proto_tree_add_item(tree, hf_axia_src, tvb, offset - 4, len + 7, ENC_NA);
-                proto_tree *source_tree = proto_item_add_subtree(ti, ett_lwadv);
+                proto_tree *source_tree = proto_item_add_subtree(ti, ett_axia_adv);
                 proto_item_set_text(ti, "Source %d", src_num);
                 info->src_info = wmem_new0(wmem_file_scope(), axia_src_info_t);
                 increment_dissection_depth(pinfo);
@@ -556,7 +558,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                     uint32_t hwid;
                     unsigned fader_num;
                     char addr_str[16];
-                    proto_tree *busy_tree = proto_item_add_subtree(ti, ett_lwadv);
+                    proto_tree *busy_tree = proto_item_add_subtree(ti, ett_axia_adv);
                     proto_tree_add_item_ret_uint(busy_tree, hf_axia_busy_hwid, tvb, offset + 3, 2, ENC_BIG_ENDIAN, &hwid);
                     proto_tree_add_item_ret_uint(busy_tree, hf_axia_busy_prefix, tvb, offset + 7, 2, ENC_BIG_ENDIAN, &prefix);
                     console_ip = (ws_in4_addr)((g_htonl(prefix) >> 16) + g_htonl(hwid));
@@ -582,7 +584,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             bool gpi = false;
             bool source_is_new = false;
             proto_item *ti = proto_tree_add_item(tree, hf_axia_gpio, tvb, offset + 1, 5, ENC_NA);
-            proto_tree *gpio_tree = proto_item_add_subtree(ti, ett_lwadv);
+            proto_tree *gpio_tree = proto_item_add_subtree(ti, ett_axia_adv);
             proto_item *lpid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
             if (lpid != 0xFF)
             {
@@ -599,7 +601,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             if (source && source->psnm && term && term->atrn)
             {
                 proto_item_append_text(lpid_item, " [%s@%s]", source->psnm, term->atrn);
-                proto_tree *setup_tree = proto_item_add_subtree(lpid_item, ett_lwadv);
+                proto_tree *setup_tree = proto_item_add_subtree(lpid_item, ett_axia_gpio);
                 proto_item *setup_frm = proto_tree_add_uint(setup_tree, hf_axia_src_setup_frame, tvb, 0, 0, source->setup_frame);
                 proto_item_set_generated(setup_frm);
             }
@@ -657,11 +659,11 @@ static int dissect_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA Advertisement");
     col_clear(pinfo->cinfo, COL_INFO);
 
     proto_item *ti = proto_tree_add_item(tree, proto_axia_adv, tvb, 0, -1, ENC_NA);
-    proto_tree *axia_adv_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree *axia_adv_tree = proto_item_add_subtree(ti, ett_axia_adv);
     proto_tree_add_item(axia_adv_tree, hf_axia_magic_num, tvb, 0, 4, ENC_NA);
     proto_tree_add_item(axia_adv_tree, hf_axia_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
     int offset = 16;
@@ -672,10 +674,10 @@ static int dissect_lwgpio(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA GPIO");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_gpio, tvb, 0, -1, ENC_NA);
-    proto_tree *axia_adv_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree *axia_adv_tree = proto_item_add_subtree(ti, ett_axia_gpio);
     proto_tree_add_item(axia_adv_tree, hf_axia_magic_num, tvb, 0, 4, ENC_NA);
     proto_tree_add_item(axia_adv_tree, hf_axia_seq, tvb, 4, 4, ENC_BIG_ENDIAN);
     int offset = 16;
@@ -693,10 +695,10 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     uint8_t mac_address[FT_ETHER_LEN];
     address current_clock_mac;
 
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA Clock");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_clock, tvb, 0, -1, ENC_NA);
-    proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_lwadv);
+    proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_clock);
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_seq, tvb, 2, 2, ENC_BIG_ENDIAN, &seq);
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &timestamp);
     proto_tree_add_item(axia_clock_tree, hf_axia_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
@@ -792,7 +794,7 @@ static bool dissect_axia_clock_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto
 void proto_register_lwadv(void)
 {
     expert_module_t* expert_livewire;
-    static hf_register_info hf[] = {
+    static hf_register_info hf_adv[] = {
         {&hf_axia_magic_num,        {"Axia Magic Number",           "axia_adv.magic_number",    FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_seq,              {"Sequence",                    "axia_adv.seq",             FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_msg_count,        {"Nested message count",        "axia_adv.msgcount",        FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
@@ -804,7 +806,6 @@ void proto_register_lwadv(void)
         {&hf_axia_unk_data,         {"Unknown Data",                "axia_adv.unknown",         FT_BYTES,       SEP_COLON,  NULL,                   0x0,            "",                                             HFILL}},
         {&hf_axia_unk_str,          {"Unknown String",              "axia_adv.unknown",         FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_opcode,           {"Operation",                   "axia_adv.opcode",          FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-
         {&hf_axia_term,             {"Terminal Information",        "axia_adv.term",            FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_term_inip,        {"IP Address",                  "axia_adv.term.inip",       FT_IPv4,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_term_hwid,        {"Hardware ID",                 "axia_adv.term.hwid",       FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
@@ -829,14 +830,16 @@ void proto_register_lwadv(void)
         {&hf_axia_busy_fader,       {"Fader",                       "axia_adv.busy.fader",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_busy_ip,          {"Console IP Address",          "axia_adv.busy.ip",         FT_IPv4,        BASE_NONE,  NULL,                   0xFFFF0000FFFF, NULL,                                           HFILL}},
         {&hf_axia_busy_prefix,      {"Console IP Prefix",           "axia_adv.busy.prefix",     FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
-
+    };
+    static hf_register_info hf_gpio[] = {
         {&hf_axia_gpio,             {"GPIO Message",                "axia_gpio",                FT_NONE,        BASE_NONE,  NULL,                   0x00,           NULL,                                           HFILL}},
         {&hf_axia_gpio_lcid,        {"Logic Circuit ID",            "axia_gpio.lcid",           FT_UINT8,       BASE_DEC,   NULL,                   0x0F,           NULL,                                           HFILL}},
         {&hf_axia_gpio_state,       {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x40,           NULL,                                           HFILL}},
         {&hf_axia_gpio_state2,      {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x01,           NULL,                                           HFILL}},
         {&hf_axia_gpio_pmult,       {"Pulse length multipier",      "axia_gpio.pulse_len_mult", FT_UINT8,       BASE_DEC,   NULL,                   0x80,           NULL,                                           HFILL}},
         {&hf_axia_gpio_plen,        {"Pulse length",                "axia_gpio.pulse_len",      FT_UINT8,       BASE_DEC,   NULL,                   0x3E,           NULL,                                           HFILL}},
-
+    };
+    static hf_register_info hf_clock[] ={
         {&hf_axia_clock_hwid,       {"Clock Hardware ID",           "axia_clock.hwid",          FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_prio,       {"Priority",                    "axia_clock.priority",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_mac,        {"Clock MAC Address",           "axia_clock.mac",           FT_ETHER,       BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
@@ -850,32 +853,25 @@ void proto_register_lwadv(void)
         { &ei_axia_clock_changed, {"axia_clock.masterchanged", PI_PROTOCOL, PI_WARN, "Livewire Master Clock Changed", EXPFILL }},
     };
     static int *ett[] = {
-        &ett_lwadv};
+        &ett_axia_adv,
+        &ett_axia_gpio,
+        &ett_axia_clock,
+    };
 
     proto_axia_adv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA Advertisement", "axia_adv");
     proto_axia_gpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA GPIO", "axia_gpio");
     proto_axia_clock = proto_register_protocol("Axia Livewire Clock", "AXIA Clock", "axia_clock");
-    proto_register_field_array(proto_axia_adv, hf, array_length(hf));
+    proto_register_field_array(proto_axia_adv, hf_adv, array_length(hf_adv));
+    proto_register_field_array(proto_axia_gpio, hf_gpio, array_length(hf_gpio));
+    proto_register_field_array(proto_axia_clock, hf_clock, array_length(hf_clock));
     proto_register_subtree_array(ett, array_length(ett));
 
     expert_livewire = expert_register_protocol(proto_axia_adv);
     expert_register_field_array(expert_livewire, ei, array_length(ei));
 
-    axia_adv_handle = register_dissector_with_description(
-        "livewire-adv",
-        "Axia Livewire Source Advertisement Protocol",
-        dissect_lwadv,
-        proto_axia_adv);
-    axia_gpio_handle = register_dissector_with_description(
-        "livewire-gpio",
-        "Axia Livewire GPIO Protocol",
-        dissect_lwgpio,
-        proto_axia_gpio);
-    axia_clock_handle = register_dissector_with_description(
-        "livewire-clock",
-        "Axia Livewire Clock",
-        dissect_lwclock,
-        proto_axia_clock);
+    axia_adv_handle = register_dissector("axia_adv", dissect_lwadv, proto_axia_adv);
+    axia_gpio_handle = register_dissector("axia_gpio", dissect_lwgpio, proto_axia_gpio);
+    axia_clock_handle = register_dissector("axia_clock", dissect_lwclock, proto_axia_clock);
 }
 void proto_reg_handoff_axia(void)
 {
