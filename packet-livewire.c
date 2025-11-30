@@ -237,12 +237,9 @@ static bool validate_header(tvbuff_t *tvb)
     {
         return false;
     }
-    for (int i = 8; i < 16; i++)
+    if (tvb_get_uint64(tvb, 8, ENC_BIG_ENDIAN) != 0)
     {
-        if (tvb_get_uint8(tvb, i) != 0)
-        {
-            return false;
-        }
+        return false;
     }
     return true;
 }
