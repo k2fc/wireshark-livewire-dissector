@@ -10,6 +10,31 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(AXIA_LW VERSION 0.0.1 DESCRIPTION "Wireshark Livewire Plugins" LANGUAGES C)
+# Find the Git executable
+find_program(GIT_EXECUTABLE NAMES git)
+
+if (GIT_EXECUTABLE)
+    # Execute git rev-parse --short HEAD to get the short hash
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_SHORT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE GIT_COMMAND_RESULT
+    )
+
+    if (GIT_COMMAND_RESULT EQUAL 0)
+        # Set the project version to the obtained Git short hash
+        set(PROJECT_VERSION "${GIT_SHORT_HASH}")
+        message(STATUS "Project version set to Git short hash: ${PROJECT_VERSION}")
+    else()
+        message(WARNING "Failed to get Git short hash. Using default version.")
+        set(PROJECT_VERSION "unknown")
+    endif()
+else()
+    message(WARNING "Git executable not found. Using default version.")
+    set(PROJECT_VERSION "unknown")
+endif()
 
 find_package(Wireshark CONFIG REQUIRED)
 
