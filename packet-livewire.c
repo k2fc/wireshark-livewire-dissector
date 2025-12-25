@@ -63,6 +63,7 @@ static int hf_axia_src_shab;
 static int hf_axia_src_fsid;
 static int hf_axia_src_bsid;
 static int hf_axia_src_psnm;
+static int hf_axia_src_labl;
 static int hf_axia_src_lpid;
 static int hf_axia_src_setup_frame;
 static int hf_axia_src_is_mm;
@@ -131,6 +132,7 @@ typedef struct
     ws_in4_addr fsid;
     ws_in4_addr bsid;
     char *psnm;
+    char *labl;
     axia_term_info_t *term;
     ws_in4_addr rtp_added;
     uint32_t setup_frame;
@@ -269,6 +271,8 @@ static void write_src_info(axia_adv_info_t *info)
             existing->bsid = info->src_info->bsid;
         if (info->src_info->psnm)
             existing->psnm = info->src_info->psnm;
+        if (info->src_info->labl)
+            existing->labl = info->src_info->labl;
         if (info->src_info->term)
             existing->term = info->src_info->term;
         if (info->src_info->rtp_added)
@@ -529,6 +533,13 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 char *psnm = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
                 info->src_info->psnm = psnm;
                 return offset + tree_add_value(tree, tvb, offset, hf_axia_src_psnm);
+            }
+            else if (strcmp(msg_type, "LABL") == 0)
+            {
+                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                char *labl = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                info->src_info->labl = labl;
+                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_labl);
             }
             else if (strcmp(msg_type, "FSID") == 0)
             {
@@ -864,6 +875,7 @@ void proto_register_lwadv(void)
         {&hf_axia_src_fsid,         {"Multicast address",           "axia_adv.src.fsid",        FT_IPv4,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_src_bsid,         {"Backfeed address",            "axia_adv.src.bsid",        FT_IPv4,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_src_psnm,         {"Name",                        "axia_adv.src.psnm",        FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_src_labl,         {"Label",                       "axia_adv.src.labl",        FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_src_lpid,         {"Logic Port ID",               "axia_adv.src.lpid",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_src_setup_frame,  {"Setup Frame",                 "axia_adv.src.setup-frame", FT_FRAMENUM,    BASE_NONE,  NULL,                   0x0,            "First frame that advertised this source",      HFILL}},
         {&hf_axia_src_is_mm,        {"Is Backfeed",                 "axia_adv.src.is-backfeed", FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            "Is this source a backfeed from a console?",    HFILL}},
