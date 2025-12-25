@@ -132,7 +132,6 @@ typedef struct
     ws_in4_addr fsid;
     ws_in4_addr bsid;
     char *psnm;
-    char *labl;
     axia_term_info_t *term;
     ws_in4_addr rtp_added;
     uint32_t setup_frame;
@@ -271,8 +270,6 @@ static void write_src_info(axia_adv_info_t *info)
             existing->bsid = info->src_info->bsid;
         if (info->src_info->psnm)
             existing->psnm = info->src_info->psnm;
-        if (info->src_info->labl)
-            existing->labl = info->src_info->labl;
         if (info->src_info->term)
             existing->term = info->src_info->term;
         if (info->src_info->rtp_added)
@@ -537,8 +534,6 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             else if (strcmp(msg_type, "LABL") == 0)
             {
                 int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                char *labl = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
-                info->src_info->labl = labl;
                 return offset + tree_add_value(tree, tvb, offset, hf_axia_src_labl);
             }
             else if (strcmp(msg_type, "FSID") == 0)
