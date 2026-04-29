@@ -386,7 +386,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             }
             else if (strcmp(msg_type, "ADVT") == 0)
             {
-                col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(tvb_get_uint8(tvb, offset + 1), advtypenames, "Unknown Livewire Advertisement (0x%02x)"));
+                col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(tvb_get_uint8(tvb, offset + 1), advtypenames, "Unknown Livewire Advertisement type"));
                 return offset + tree_add_value(tree, tvb, offset, hf_axia_advt);
             }
             else if (strcmp(msg_type, "TERM") == 0)
