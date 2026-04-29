@@ -164,9 +164,9 @@ static const value_string advtypenames[] = {
     {0x3, "Source allocation state"},
     {0, NULL}};
 static const value_string clocktypenames[] = {
-    {0x0a, "Fast clock sync"},
-    {0x0b, "Fast clock follow-up"},
-    {0x0c, "Slow clock sync"},
+    {0x0a, "Fast clock, packet A"},
+    {0x0b, "Fast clock, packet B"},
+    {0x0c, "Slow clock"},
     {0, NULL},
 };
 static char *get_opcode_description(char *opcode)
@@ -700,6 +700,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
 {
     if (tvb_captured_length(tvb) != 36)
         return 0;
+    uint32_t rtp_timestamp;
     uint32_t timestamp;
     uint32_t seq;
     uint32_t type;
@@ -712,7 +713,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     proto_item *ti = proto_tree_add_item(tree, proto_axia_clock, tvb, 0, -1, ENC_NA);
     proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_clock);
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_seq, tvb, 2, 2, ENC_BIG_ENDIAN, &seq);
-    proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &timestamp);
+    proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_samp, tvb, 4, 4, ENC_BIG_ENDIAN, &rtp_timestamp);
     proto_tree_add_item(axia_clock_tree, hf_axia_clock_fast, tvb, 16, 4, ENC_BIG_ENDIAN);
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_type, tvb, 20, 1, ENC_NA, &type);
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_prio, tvb, 27, 1, ENC_NA, &priority);
@@ -734,7 +735,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     ti = proto_tree_add_boolean(axia_clock_tree, hf_axia_clock_rate, tvb, 0, 0, fast_rate);
     proto_item_set_generated(ti);
     col_append_fstr(pinfo->cinfo, COL_INFO, "%s, Seq=%u, Priority=%u, Time=%u",
-        val_to_str_const(type, clocktypenames, "Unknown clock packet"), seq, priority, timestamp);
+        val_to_str_const(type, clocktypenames, "Unknown clock packet"), seq, priority, rtp_timestamp);
     return tvb_captured_length(tvb);
 }
 static int dissect_intercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
@@ -893,7 +894,7 @@ void proto_register_lwadv(void)
         {&hf_axia_clock_hwid,       {"Clock Hardware ID",           "axia_clock.hwid",          FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_prio,       {"Priority",                    "axia_clock.priority",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_mac,        {"Clock MAC Address",           "axia_clock.mac",           FT_ETHER,       BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_samp,       {"Timstamp in samples",         "axia_clock.timestamp",     FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_clock_samp,       {"RTP Timestamp",               "axia_clock.rtp_ts",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_fast,       {"Timstamp in live packets",    "axia_clock.fast",          FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_seq,        {"Sequence",                    "axia_clock.seq",           FT_UINT16,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_rate,       {"Is Fast-Rate Clock",          "axia_clock.rate",          FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
