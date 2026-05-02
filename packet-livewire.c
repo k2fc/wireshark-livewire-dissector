@@ -629,14 +629,18 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             proto_item *pmult_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
             proto_item *state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
             proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
-            len *= mult ? 20 : 500;
-            if (!state && !mult && !len)
+            if (!state && !mult && len <= 1)
             {
-                proto_item_append_text(state_item, " [Ignored]");
+                proto_item_set_hidden(state_item);
+                proto_item_set_hidden(plen_item);
+                proto_item_set_hidden(pmult_item);
                 state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
+                len = 0;
+            } else {
+                len *= mult ? 10 : 250;
+                proto_item_append_text(pmult_item, " [%s]", mult ? "10 mS" : "250 mS");
             }
             proto_item_append_text(state_item, " [%s]", state ? "Low" : "High");
-            proto_item_append_text(pmult_item, " [%s]", mult ? "20 mS" : "500 mS");
             if (len)
                 proto_item_append_text(plen_item, " [%d mS]", len);
             proto_item_append_text(ti, ": LPID=%d ", lpid);
@@ -887,8 +891,8 @@ void proto_register_lwadv(void)
         {&hf_axia_gpio_lcid,        {"Logic Circuit ID",            "axia_gpio.lcid",           FT_UINT8,       BASE_DEC,   NULL,                   0x0F,           NULL,                                           HFILL}},
         {&hf_axia_gpio_state,       {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x40,           NULL,                                           HFILL}},
         {&hf_axia_gpio_state2,      {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x01,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_pmult,       {"Pulse length multipier",      "axia_gpio.pulse_len_mult", FT_UINT8,       BASE_DEC,   NULL,                   0x80,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_plen,        {"Pulse length",                "axia_gpio.pulse_len",      FT_UINT8,       BASE_DEC,   NULL,                   0x3E,           NULL,                                           HFILL}},
+        {&hf_axia_gpio_pmult,       {"Pulse length multiplier",     "axia_gpio.pulse_len_mult", FT_UINT8,       BASE_DEC,   NULL,                   0x80,           NULL,                                           HFILL}},
+        {&hf_axia_gpio_plen,        {"Pulse length",                "axia_gpio.pulse_len",      FT_UINT8,       BASE_DEC,   NULL,                   0x3F,           NULL,                                           HFILL}},
     };
     static hf_register_info hf_clock[] ={
         {&hf_axia_clock_hwid,       {"Clock Hardware ID",           "axia_clock.hwid",          FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
