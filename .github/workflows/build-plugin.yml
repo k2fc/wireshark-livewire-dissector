@@ -43,7 +43,7 @@ on:
       build_windows:
         description: 'Build for Windows'
         type: boolean
-        default: true
+        default: false
       build_macos:
         description: 'Build for MacOS'
         type: boolean
