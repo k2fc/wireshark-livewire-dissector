@@ -628,7 +628,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 lcid = 14 - lcid;
                 gpi = true;
             }
-            proto_item_append_text(lcid_item, gpi ? " [GPI Pin %d]" : " [GPO Pin %d]", lcid);
+            proto_item_append_text(lcid_item, gpi ? " (GPI Pin %d)" : " (GPO Pin %d)", lcid);
             proto_item *pmult_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
             proto_item *state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
             proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
@@ -641,11 +641,11 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 len = 0;
             } else {
                 len *= mult ? 10 : 250;
-                proto_item_append_text(pmult_item, " [%s]", mult ? "10 mS" : "250 mS");
+                proto_item_append_text(pmult_item, " (%s)", mult ? "10 mS" : "250 mS");
             }
-            proto_item_append_text(state_item, " [%s]", state ? "Low" : "High");
+            proto_item_append_text(state_item, " (%s)", state ? "Low" : "High");
             if (len)
-                proto_item_append_text(plen_item, " [%d mS]", len);
+                proto_item_append_text(plen_item, " (%d mS)", len);
             proto_item_append_text(ti, ": LPID=%d ", lpid);
             if (source_is_new)
                 col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
