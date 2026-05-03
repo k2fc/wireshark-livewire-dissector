@@ -2,7 +2,7 @@ name: Build macOS Plugin
 
 on:
   push:
-    branches: [ dev ]
+    branches: [ dev, test-actions ]
   pull_request:
     branches: [ dev ]
   workflow_dispatch:
