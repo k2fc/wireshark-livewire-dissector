@@ -605,7 +605,10 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 info->lpid = lpid;
             }
             else
+            {
                 lpid = info->lpid;
+                proto_item_append_text(lpid_item, " (same as previous)");
+            }
             axia_src_info_t *source = wmem_tree_lookup32(axia_sources, lpid);
             axia_term_info_t *term;
             if (source)
