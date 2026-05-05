@@ -6,6 +6,8 @@
 #include <epan/dissectors/packet-rtp.h>
 #include <math.h>
 #include <epan/expert.h>
+#include <epan/dissectors/packet-tcp.h>
+#include <epan/tvbuff.h>
 
 #ifndef VERSION
 #define VERSION "0.0.0"
@@ -24,6 +26,9 @@
 #define AXIA_INTERCOM_ADDR "239.192.255.10"
 #define AXIA_INTERCOM_PORT 5000
 #define AXIA_RTP_PORT 5004
+#define AXIA_LWCP_PORT 4010
+#define AXIA_LWCP_MODULE_PORT 4011
+#define AXIA_LWCP_CONSOLE_PORT 4012
 
 WS_DLL_PUBLIC_DEF const gchar plugin_version[] = VERSION;
 WS_DLL_PUBLIC_DEF const int plugin_want_major = WIRESHARK_VERSION_MAJOR;
@@ -35,6 +40,7 @@ static int proto_axia_adv = -1;
 static int proto_axia_gpio = -1;
 static int proto_axia_clock = -1;
 static int proto_axia_intercom = -1;
+static int proto_axia_lwcp = -1;
 
 static int hf_axia_magic_num;
 static int hf_axia_seq;
@@ -90,12 +96,20 @@ static int hf_axia_clock_seq;
 static int hf_axia_clock_rate;
 static int hf_axia_clock_type;
 
+static int hf_axia_lwcp_opcode;
+static int hf_axia_lwcp_object;
+static int hf_axia_lwcp_subobj;
+static int hf_axia_lwcp_subobj_id;
+static int hf_axia_lwcp_property;
+static int hf_axia_lwcp_value;
+
 static int hf_axia_intercom_msg;
 
 static int ett_axia_adv;
 static int ett_axia_gpio;
 static int ett_axia_clock;
 static int ett_axia_intercom;
+static int ett_axia_lwcp;
 
 static expert_field ei_axia_clock_changed;
 
@@ -158,6 +172,9 @@ static dissector_handle_t axia_gpio_handle;
 static dissector_handle_t axia_clock_handle;
 static dissector_handle_t axia_intercom_handle;
 static dissector_handle_t json_handle;
+static dissector_handle_t lwcp_handle;
+static dissector_handle_t lwcp_tcp_handle;
+
 static const value_string advtypenames[] = {
     {0x1, "Verbose announcement"},
     {0x2, "Periodic announcement"},
@@ -766,6 +783,21 @@ static int dissect_intercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         json_handle = find_dissector("json");
     }
 }
+static uint32_t get_lwcp_pdu_len(packet_info *pinfo, tvbuff_t *tvb, int offset, void *data){
+    int next_offset = offset;
+    bool found = tvb_find_line_end_unquoted(tvb, offset, -1, &next_offset);
+    if (!found){
+        return 0;
+    }
+    return next_offset - offset;
+}
+static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
+    proto_item *ti = proto_tree_add_item(tree, proto_axia_lwcp, tvb, 0, -1, ENC_NA);
+    proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_lwcp);
+}
+static int dissect_lwcp_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data){
+    tcp_dissect_pdus(tvb, pinfo, tree, TRUE, 1, get_lwcp_pdu_len, dissect_lwcp, data);
+}
 static bool test_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
     if (cmp_address(&pinfo->net_dst, &advertisement_address))
@@ -920,6 +952,7 @@ void proto_register_lwadv(void)
     proto_axia_gpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA GPIO", "axia_gpio");
     proto_axia_clock = proto_register_protocol("Axia Livewire Clock", "AXIA Clock", "axia_clock");
     proto_axia_intercom = proto_register_protocol("Telos Infinity Intercom", "Infinity Intercom", "axia_intercom");
+    proto_axia_lwcp = proto_register_protocol("Axia Livewire Control Protocol", "AXIA LWCP", "axia_lwcp");
     proto_register_field_array(proto_axia_adv, hf_adv, array_length(hf_adv));
     proto_register_field_array(proto_axia_gpio, hf_gpio, array_length(hf_gpio));
     proto_register_field_array(proto_axia_clock, hf_clock, array_length(hf_clock));
@@ -932,6 +965,8 @@ void proto_register_lwadv(void)
     axia_gpio_handle = register_dissector("axia_gpio", dissect_lwgpio, proto_axia_gpio);
     axia_clock_handle = register_dissector("axia_clock", dissect_lwclock, proto_axia_clock);
     axia_intercom_handle = register_dissector("axia_intercom", dissect_intercom, proto_axia_intercom);
+    lwcp_handle = register_dissector("axia_lwcp", dissect_lwcp, proto_axia_lwcp);
+    lwcp_tcp_handle = register_dissector("axia_lwcp-tcp", dissect_lwcp_tcp, proto_axia_lwcp);
 }
 void proto_reg_handoff_axia(void)
 {
@@ -956,6 +991,8 @@ void proto_reg_handoff_axia(void)
     dissector_add_for_decode_as("udp.port", axia_gpio_handle);
     dissector_add_for_decode_as("udp.port", axia_clock_handle);
     dissector_add_for_decode_as("udp.port", axia_intercom_handle);
+    dissector_add_for_decode_as("tcp.port", lwcp_tcp_handle);
+    dissector_add_for_decode_as("udp.port", lwcp_handle);
 }
 void plugin_register(void)
 {
