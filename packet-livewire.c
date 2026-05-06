@@ -820,8 +820,73 @@ static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWCP");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_lwcp, tvb, 0, -1, ENC_NA);
-    proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_lwcp);
-    return tvb_captured_length(tvb);
+    proto_tree *axia_lwcp_tree = proto_item_add_subtree(ti, ett_axia_lwcp);
+    int start = 0;
+    int offset = 0;
+    int field = 0;
+    int encap_depth = 0;
+    bool in_quotes = false;
+    while(offset < tvb_reported_length(tvb)) {
+        if (tvb_strneql(tvb, offset, "%BeginEncap%", 12) == 0) {
+            encap_depth++;
+            offset += 12;
+            continue;
+        }
+        if (tvb_strneql(tvb, offset, "%EndEncap%", 10) == 0) {
+            encap_depth--;
+            offset += 10;
+            continue;
+        }
+
+        char c = tvb_get_uint8(tvb, offset);
+        if (c == '"'){
+            in_quotes = !in_quotes;
+        } else if (c == '[') {
+            encap_depth++;
+        } else if (c == ']') {
+            encap_depth--;
+        }
+        if (encap_depth == 0 && !in_quotes) {
+            int len = offset - start;
+            bool over = FALSE;
+            if (c == '\n' || c == '\r') {
+                over = TRUE;
+            } else if (offset == tvb_reported_length(tvb) - 1) {
+                over = TRUE;
+                len++;
+            }
+            if (over || c == ' '){
+                switch(field) {
+                    case 0:
+                        proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_opcode, tvb, start, len, ENC_ASCII | ENC_NA);
+                        break;
+                    case 1:
+                        proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_object, tvb, start, len, ENC_ASCII | ENC_NA);
+                        break;
+                    default:
+                        proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA);
+                        break;
+                }
+                if (over) {
+                    return tvb_reported_length(tvb);
+                }
+                field++;
+                start = offset + 1;
+            }
+            else if (c == ',') {
+                if (tvb_reported_length(tvb) > offset && tvb_get_uint8(tvb, offset + 1) == ' '){
+                    proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA);
+                    start = offset + 2;
+                    offset++;
+                } else {
+                    proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA);
+                    start = offset + 1;
+                }
+            }
+        }
+        offset++;
+    }
+    return tvb_reported_length(tvb);
 }
 static int dissect_lwcp_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data){
     tcp_dissect_pdus(tvb, pinfo, tree, TRUE, 1, get_lwcp_pdu_len, dissect_lwcp, data);
@@ -978,6 +1043,11 @@ void proto_register_lwadv(void)
         {&hf_axia_clock_rate,       {"Is Fast-Rate Clock",          "axia_clock.rate",          FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
         {&hf_axia_clock_type,       {"Clock message type",          "axia_clock.type",          FT_UINT8,       BASE_HEX,   VALS(clocktypenames),   0x0,            NULL,                                           HFILL}},
     };
+    static hf_register_info hf_lwcp[] ={
+        {&hf_axia_lwcp_opcode,      {"Operation",                   "axia_lwcp.opcode",         FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_lwcp_object,      {"Object",                      "axia_lwcp.object",         FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_lwcp_property,    {"Property",                    "axia_lwcp.property",       FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
+    };
     static ei_register_info ei[] = {
         { &ei_axia_clock_changed, {"axia_clock.masterchanged", PI_PROTOCOL, PI_WARN, "Livewire Master Clock Changed", EXPFILL }},
     };
@@ -995,6 +1065,7 @@ void proto_register_lwadv(void)
     proto_register_field_array(proto_axia_adv, hf_adv, array_length(hf_adv));
     proto_register_field_array(proto_axia_gpio, hf_gpio, array_length(hf_gpio));
     proto_register_field_array(proto_axia_clock, hf_clock, array_length(hf_clock));
+    proto_register_field_array(proto_axia_lwcp, hf_lwcp, array_length(hf_lwcp));
     proto_register_subtree_array(ett, array_length(ett));
 
     expert_livewire = expert_register_protocol(proto_axia_adv);
