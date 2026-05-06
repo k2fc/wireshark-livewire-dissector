@@ -826,6 +826,9 @@ static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     int field = 0;
     int encap_depth = 0;
     bool in_quotes = false;
+    char *op;
+    char *obj;
+    char *prop;
     while(offset < tvb_reported_length(tvb)) {
         if (tvb_strneql(tvb, offset, "%BeginEncap%", 12) == 0) {
             encap_depth++;
@@ -858,16 +861,20 @@ static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
             if (over || c == ' '){
                 switch(field) {
                     case 0:
-                        proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_opcode, tvb, start, len, ENC_ASCII | ENC_NA);
+                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_opcode, tvb, start, len, ENC_ASCII | ENC_NA,
+                            wmem_file_scope(), &op);
                         break;
                     case 1:
-                        proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_object, tvb, start, len, ENC_ASCII | ENC_NA);
+                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_object, tvb, start, len, ENC_ASCII | ENC_NA,
+                            wmem_file_scope(), &obj);
                         break;
                     default:
-                        proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA);
+                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA,
+                            wmem_file_scope(), &prop);
                         break;
                 }
                 if (over) {
+                    col_append_fstr(pinfo->cinfo, COL_INFO, "%s %s %s", op, obj, prop);
                     return tvb_reported_length(tvb);
                 }
                 field++;
@@ -886,6 +893,7 @@ static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
         }
         offset++;
     }
+    col_append_fstr(pinfo->cinfo, COL_INFO, "%s %s %s", op, obj, prop);
     return tvb_reported_length(tvb);
 }
 static int dissect_lwcp_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data){
