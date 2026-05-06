@@ -695,7 +695,7 @@ static int dissect_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW Advertisement");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWADV");
     col_clear(pinfo->cinfo, COL_INFO);
 
     proto_item *ti = proto_tree_add_item(tree, proto_axia_adv, tvb, 0, -1, ENC_NA);
@@ -710,7 +710,7 @@ static int dissect_lwgpio(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW GPIO");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWGPIO");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_gpio, tvb, 0, -1, ENC_NA);
     proto_tree *axia_adv_tree = proto_item_add_subtree(ti, ett_axia_gpio);
@@ -732,7 +732,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     uint8_t mac_address[FT_ETHER_LEN];
     address current_clock_mac;
 
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW Clock");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWCLOCK");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_clock, tvb, 0, -1, ENC_NA);
     proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_clock);
@@ -863,18 +863,23 @@ static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
                     case 0:
                         proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_opcode, tvb, start, len, ENC_ASCII | ENC_NA,
                             wmem_file_scope(), &op);
+                        col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", op);
                         break;
                     case 1:
                         proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_object, tvb, start, len, ENC_ASCII | ENC_NA,
                             wmem_file_scope(), &obj);
+                        col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", obj);
                         break;
                     default:
                         proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA,
                             wmem_file_scope(), &prop);
+                        col_append_str(pinfo->cinfo, COL_INFO, prop);
+                        if (!over) {
+                            col_append_str(pinfo->cinfo, COL_INFO, ", ");
+                        }
                         break;
                 }
                 if (over) {
-                    col_append_fstr(pinfo->cinfo, COL_INFO, "%s %s %s", op, obj, prop);
                     return tvb_reported_length(tvb);
                 }
                 field++;
