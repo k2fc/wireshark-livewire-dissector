@@ -102,17 +102,11 @@ static int hf_axia_clock_type;
 
 static int hf_axia_lwcp_opcode;
 static int hf_axia_lwcp_object;
-static int hf_axia_lwcp_subobj;
-static int hf_axia_lwcp_subobj_id;
 static int hf_axia_lwcp_property;
-static int hf_axia_lwcp_value;
-
-static int hf_axia_intercom_msg;
 
 static int ett_axia_adv;
 static int ett_axia_gpio;
 static int ett_axia_clock;
-static int ett_axia_intercom;
 static int ett_axia_lwcp;
 
 static expert_field ei_axia_clock_changed;
@@ -159,7 +153,7 @@ typedef struct
 {
     axia_term_info_t *term_info;
     axia_src_info_t *src_info;
-    int16_t lpid;
+    uint32_t lpid;
     int32_t nums;
 } axia_adv_info_t;
 
@@ -370,7 +364,7 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
 static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset, axia_adv_section_e section, axia_adv_info_t *info)
 {
     char *msg_type;
-    msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII | ENC_NA);
+    msg_type = (char *)tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII | ENC_NA);
     offset += 4;
     if (info == NULL)
     {
@@ -378,7 +372,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
     }
     if (get_opcode_description(msg_type))
     {
-        int msg_count = tvb_get_uint8(tvb, offset + 1);
+        int msg_count = (int)tvb_get_uint8(tvb, offset + 1);
         proto_tree_add_string_format(tree, hf_axia_opcode, tvb, offset - 4, 4, msg_type,
                                      "Operation: %s (%s)", get_opcode_description(msg_type), msg_type);
         offset += tree_add_value(tree, tvb, offset, hf_axia_msg_count);
@@ -529,7 +523,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             else if (strcmp(msg_type, "ATRN") == 0)
             {
                 int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                char *atrn = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                char *atrn = (char *)tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
                 info->term_info->atrn = atrn;
                 return offset + tree_add_value(tree, tvb, offset, hf_axia_term_atrn);
             }
@@ -548,13 +542,12 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             else if (strcmp(msg_type, "PSNM") == 0)
             {
                 int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                char *psnm = tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                char *psnm = (char *)tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
                 info->src_info->psnm = psnm;
                 return offset + tree_add_value(tree, tvb, offset, hf_axia_src_psnm);
             }
             else if (strcmp(msg_type, "LABL") == 0)
             {
-                int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
                 return offset + tree_add_value(tree, tvb, offset, hf_axia_src_labl);
             }
             else if (strcmp(msg_type, "FSID") == 0)
@@ -729,7 +722,6 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     if (tvb_captured_length(tvb) != 36)
         return 0;
     uint32_t rtp_timestamp;
-    uint32_t timestamp;
     uint32_t seq;
     uint32_t type;
     uint32_t priority;
@@ -775,7 +767,7 @@ static int dissect_intercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         int json_dissected = call_dissector(json_handle, json_tvb, pinfo, tree);
         if (json_length == json_dissected)
         {
-            return tvb_captured_length(tvb);
+            return tvb_reported_length(tvb);
         }
         else
         {
@@ -786,8 +778,9 @@ static int dissect_intercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     {
         json_handle = find_dissector("json");
     }
+    return tvb_reported_length(tvb);
 }
-static uint32_t get_lwcp_pdu_len(packet_info *pinfo, tvbuff_t *tvb, int offset, void *data){
+static uint32_t get_lwcp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_){
     int next_offset = offset;
     int tvb_len = tvb_reported_length(tvb);
     bool in_encap = FALSE;
@@ -820,13 +813,13 @@ static uint32_t get_lwcp_pdu_len(packet_info *pinfo, tvbuff_t *tvb, int offset, 
     }
     return 0;
 }
-static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
+static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWCP");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_lwcp, tvb, 0, -1, ENC_NA);
     proto_tree *axia_lwcp_tree = proto_item_add_subtree(ti, ett_axia_lwcp);
-    int start = 0;
-    int offset = 0;
+    unsigned start = 0;
+    unsigned offset = 0;
     int field = 0;
     int encap_depth = 0;
     bool in_quotes = false;
@@ -989,18 +982,6 @@ static bool test_lwintercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     }
     return false;
 }
-static bool dissect_axia_gpio_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
-{
-    return test_lwgpio(tvb, pinfo, tree, data);
-}
-static bool dissect_axia_clock_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
-{
-    return test_lwclock(tvb, pinfo, tree, data);
-}
-static bool dissect_axia_intercom_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
-{
-    return test_lwintercom(tvb, pinfo, tree, data);
-}
 void proto_register_lwadv(void)
 {
     expert_module_t* expert_livewire;
@@ -1119,7 +1100,7 @@ void proto_reg_handoff_axia(void)
     dissector_add_for_decode_as("udp.port", axia_gpio_handle);
     dissector_add_for_decode_as("udp.port", axia_clock_handle);
     dissector_add_for_decode_as("udp.port", axia_intercom_handle);
-    dissector_add_uint("tcp.port", AXIA_LWCP_PORT, lwcp_tcp_handle);
+    dissector_add_for_decode_as("tcp.port", lwcp_tcp_handle);
     dissector_add_for_decode_as("udp.port", lwcp_handle);
 }
 void plugin_register(void)
