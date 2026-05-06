@@ -695,7 +695,7 @@ static int dissect_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA Advertisement");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW Advertisement");
     col_clear(pinfo->cinfo, COL_INFO);
 
     proto_item *ti = proto_tree_add_item(tree, proto_axia_adv, tvb, 0, -1, ENC_NA);
@@ -710,7 +710,7 @@ static int dissect_lwgpio(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
 {
     if (!validate_header(tvb)) /* This is not an Axia packet */
         return 0;
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA GPIO");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW GPIO");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_gpio, tvb, 0, -1, ENC_NA);
     proto_tree *axia_adv_tree = proto_item_add_subtree(ti, ett_axia_gpio);
@@ -732,7 +732,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     uint8_t mac_address[FT_ETHER_LEN];
     address current_clock_mac;
 
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "AXIA Clock");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LW Clock");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_clock, tvb, 0, -1, ENC_NA);
     proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_clock);
@@ -785,18 +785,47 @@ static int dissect_intercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 }
 static uint32_t get_lwcp_pdu_len(packet_info *pinfo, tvbuff_t *tvb, int offset, void *data){
     int next_offset = offset;
-    bool found = tvb_find_line_end_unquoted(tvb, offset, -1, &next_offset);
-    if (!found){
-        return 0;
+    int tvb_len = tvb_reported_length(tvb);
+    bool in_encap = FALSE;
+    bool in_quotes = FALSE;
+    while(next_offset < tvb_len){
+        if (tvb_strneql(tvb, next_offset, "%BeginEncap%", 12) == 0) {
+            in_encap = TRUE;
+            next_offset += 12;
+            continue;
+        }
+        if (tvb_strneql(tvb, next_offset, "%EndEncap%", 10) == 0) {
+            in_encap = FALSE;
+            next_offset += 10;
+            continue;
+        }
+        char c = tvb_get_uint8(tvb, next_offset);
+        if (c == '"'){
+            in_quotes = !in_quotes;
+        }
+        if (!in_encap && !in_quotes) {
+            if (c == '\r') {
+                if (next_offset + 1 < tvb_len && tvb_get_uint8(tvb, next_offset + 1) == '\n'){
+                    return next_offset - offset + 2;
+                }
+            } else if (c == '\n'){
+                return next_offset - offset + 1;
+            }
+        }
+        next_offset++;
     }
-    return next_offset - offset;
+    return 0;
 }
 static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWCP");
+    col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_lwcp, tvb, 0, -1, ENC_NA);
     proto_tree *axia_clock_tree = proto_item_add_subtree(ti, ett_axia_lwcp);
+    return tvb_captured_length(tvb);
 }
 static int dissect_lwcp_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data){
     tcp_dissect_pdus(tvb, pinfo, tree, TRUE, 1, get_lwcp_pdu_len, dissect_lwcp, data);
+    return tvb_reported_length(tvb);
 }
 static bool test_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
@@ -826,6 +855,20 @@ static bool test_lwgpio(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     {
         conversation_t *conversation = find_or_create_conversation(pinfo);
         conversation_set_dissector(conversation, axia_gpio_handle);
+        return true;
+    }
+    return false;
+}
+static bool test_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    if (cmp_address(&pinfo->net_dst, &gpio_address))
+        return false;
+    if (pinfo->destport != AXIA_LWCP_CONSOLE_PORT && pinfo->destport != AXIA_LWCP_MODULE_PORT)
+        return false;
+    if (dissect_lwcp(tvb, pinfo, tree, data))
+    {
+        conversation_t *conversation = find_or_create_conversation(pinfo);
+        conversation_set_dissector(conversation, lwcp_handle);
         return true;
     }
     return false;
@@ -863,10 +906,6 @@ static bool test_lwintercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         return true;
     }
     return false;
-}
-static bool dissect_axia_adv_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
-{
-    return test_lwadv(tvb, pinfo, tree, data);
 }
 static bool dissect_axia_gpio_heur_udp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
@@ -948,11 +987,11 @@ void proto_register_lwadv(void)
         &ett_axia_clock,
     };
 
-    proto_axia_adv = proto_register_protocol("Axia Livewire Source Advertisement", "AXIA Advertisement", "axia_adv");
-    proto_axia_gpio = proto_register_protocol("Axia Livewire Multicast GPIO", "AXIA GPIO", "axia_gpio");
-    proto_axia_clock = proto_register_protocol("Axia Livewire Clock", "AXIA Clock", "axia_clock");
+    proto_axia_adv = proto_register_protocol("Livewire Source Advertisement", "LW Advertisement", "axia_adv");
+    proto_axia_gpio = proto_register_protocol("Livewire Multicast GPIO", "LW GPIO", "axia_gpio");
+    proto_axia_clock = proto_register_protocol("Livewire Clock", "LW Clock", "axia_clock");
     proto_axia_intercom = proto_register_protocol("Telos Infinity Intercom", "Infinity Intercom", "axia_intercom");
-    proto_axia_lwcp = proto_register_protocol("Axia Livewire Control Protocol", "AXIA LWCP", "axia_lwcp");
+    proto_axia_lwcp = proto_register_protocol("Livewire Control Protocol", "LWCP", "axia_lwcp");
     proto_register_field_array(proto_axia_adv, hf_adv, array_length(hf_adv));
     proto_register_field_array(proto_axia_gpio, hf_gpio, array_length(hf_gpio));
     proto_register_field_array(proto_axia_clock, hf_clock, array_length(hf_clock));
@@ -983,15 +1022,16 @@ void proto_reg_handoff_axia(void)
     alloc_address_wmem(wmem_epan_scope(), &gpio_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
     str_to_ip(AXIA_INTERCOM_ADDR, &ip4_addr);
     alloc_address_wmem(wmem_epan_scope(), &intercom_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    heur_dissector_add("udp", dissect_axia_adv_heur_udp, "Axia Livewire Source Advertisement Heuristic Dissector", "axia_adv_heur", proto_axia_adv, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_axia_gpio_heur_udp, "Axia Livewire GPIO Heuristic Dissector", "axia_gpio_heur", proto_axia_gpio, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_axia_clock_heur_udp, "Axia Livewire Clock Heuristic Dissector", "axia_clock_heur", proto_axia_clock, HEURISTIC_ENABLE);
-    heur_dissector_add("udp", dissect_axia_intercom_heur_udp, "Telos Infinity Heuristic Dissector", "axia_intercom_heur", proto_axia_intercom, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", test_lwadv, "Livewire Source Advertisement Heuristic Dissector", "axia_adv_heur", proto_axia_adv, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", test_lwgpio, "Livewire GPIO Heuristic Dissector", "axia_gpio_heur", proto_axia_gpio, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", test_lwclock, "Livewire Clock Heuristic Dissector", "axia_clock_heur", proto_axia_clock, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", test_lwintercom, "Telos Infinity Heuristic Dissector", "axia_intercom_heur", proto_axia_intercom, HEURISTIC_ENABLE);
+    heur_dissector_add("udp", test_lwcp, "Livewire Control Protocol Heuristic Dissector", "axia_lwcp_heur", proto_axia_lwcp, HEURISTIC_ENABLE);
     dissector_add_for_decode_as("udp.port", axia_adv_handle);
     dissector_add_for_decode_as("udp.port", axia_gpio_handle);
     dissector_add_for_decode_as("udp.port", axia_clock_handle);
     dissector_add_for_decode_as("udp.port", axia_intercom_handle);
-    dissector_add_for_decode_as("tcp.port", lwcp_tcp_handle);
+    dissector_add_uint("tcp.port", AXIA_LWCP_PORT, lwcp_tcp_handle);
     dissector_add_for_decode_as("udp.port", lwcp_handle);
 }
 void plugin_register(void)
