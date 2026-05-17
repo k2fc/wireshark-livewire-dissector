@@ -1,17 +1,23 @@
-#define WS_BUILD_DLL
-#include <wireshark.h>
+/* packet-livewire.c
+ * Routines for dissection of Axia Livewire Audio over IP protocols
+ * By Dennis Graiani <dennis.graiani@gmail.com  >
+ * Copyright 2026 Dennis Graiani
+ *
+ * Wireshark - Network traffic analyzer
+ * By Gerald Combs <gerald@wireshark.org>
+ * Copyright 1998 Gerald Combs
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ */
+
+
 #include <epan/packet.h>
 #include <epan/addr_resolv.h>
 #include <epan/conversation.h>
 #include <epan/dissectors/packet-rtp.h>
-#include <math.h>
 #include <epan/expert.h>
 #include <epan/dissectors/packet-tcp.h>
-#include <epan/tvbuff.h>
-
-#ifndef VERSION
-#define VERSION "0.0.0"
-#endif
 
 #define AXIA_MAGIC_NUMBER 0x03000207
 
@@ -19,6 +25,9 @@
 #define AXIA_FAST_CLOCK_PORT 5004
 #define AXIA_SLOW_CLOCK_ADDR "239.192.255.2"
 #define AXIA_SLOW_CLOCK_PORT 7000
+#define AXIA_CLOCK_RTP_VERSION 0x90
+#define AXIA_CLOCK_RTP_PAYLOAD_TYPE 0xff
+#define AXIA_CLOCK_RTP_EXTENSION_PROFILE 0xfa1a
 
 #define AXIA_ADV_ADDR "239.192.255.3"
 #define AXIA_ADV_PORT 4001
@@ -84,7 +93,6 @@ static int hf_axia_busy_fader;
 static int hf_axia_busy_ip;
 static int hf_axia_busy_prefix;
 
-static int hf_axia_gpio;
 static int hf_axia_gpio_lcid;
 static int hf_axia_gpio_state;
 static int hf_axia_gpio_state2;
@@ -184,12 +192,12 @@ static const value_string clocktypenames[] = {
     {0x0c, "Slow clock"},
     {0, NULL},
 };
-static char *get_opcode_description(char *opcode)
+static const char *get_opcode_description(const char *opcode)
 {
     if (!opcode)
-        return 0;
+        return NULL;
     if (!opcode[0])
-        return 0;
+        return NULL;
     if (strcmp(opcode, "INDI") == 0)
         return "Value Indication";
     if (strcmp(opcode, "WRNI") == 0)
@@ -202,7 +210,7 @@ static char *get_opcode_description(char *opcode)
         return "Status indication";
     if (strcmp(opcode, "NEST") == 0)
         return "No operation - container for nested messages";
-    return 0;
+    return NULL;
 }
 static void setup_axia_transport(packet_info *pinfo, uint16_t psid)
 {
@@ -299,8 +307,9 @@ static void write_src_info(axia_adv_info_t *info)
         wmem_tree_insert32(axia_sources, info->src_info->psid, (void *)info->src_info);
     }
 }
-static int tree_add_value(proto_tree *tree, tvbuff_t *tvb, int offset, int hf)
+static int axia_adv_tree_add_field(proto_tree *tree, tvbuff_t *tvb, int offset, int hf)
 {
+    int str_len;
     switch (tvb_get_uint8(tvb, offset))
     {
         case 0x0:
@@ -311,8 +320,8 @@ static int tree_add_value(proto_tree *tree, tvbuff_t *tvb, int offset, int hf)
             proto_tree_add_item(tree, hf, tvb, offset + 1, 4, ENC_BIG_ENDIAN);
             return 5;
         case 0x3:
-            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            proto_tree_add_item(tree, hf, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+            str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tree, hf, tvb, offset + 3, str_len, ENC_ASCII);
             return str_len + 3;
         case 0x6:
         case 0x8:
@@ -329,7 +338,8 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
     if (offset < 4)
         return 0;
     int len = 0;
-    unsigned char *msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset - 4, 4, ENC_ASCII | ENC_NA);
+    int str_len;
+    unsigned char *msg_type = tvb_get_string_enc(pinfo->pool, tvb, offset - 4, 4, ENC_ASCII);
     proto_item *ti = NULL;
     switch (tvb_get_uint8(tvb, offset))
     {
@@ -343,8 +353,8 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             len = 5;
             break;
         case 0x3:
-            int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-            ti = proto_tree_add_item(tree, hf_axia_unk_str, tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+            str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+            ti = proto_tree_add_item(tree, hf_axia_unk_str, tvb, offset + 3, str_len, ENC_ASCII);
             len = (str_len + 3);
             break;
         case 0x6:
@@ -353,7 +363,7 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             len = 3;
             break;
         case 0x9:
-            ti = proto_tree_add_item(tree, hf_axia_unk_data, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
+            ti = proto_tree_add_item(tree, hf_axia_unk_data, tvb, offset + 1, 8, ENC_NA);
             len = 9;
             break;
     }
@@ -361,10 +371,23 @@ static int dissect_axia_adv_unk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
         proto_item_append_text(ti, " (%s)", msg_type);
     return len;
 }
+
+/*
+Implements increment_dissection_depth and decrement_dissection_depth
+*/
+// NOLINTNEXTLINE(misc-no-recursion)
 static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset, axia_adv_section_e section, axia_adv_info_t *info)
 {
     char *msg_type;
-    msg_type = (char *)tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII | ENC_NA);
+    proto_item *ti;
+    uint32_t lpid;
+    uint32_t lcid;
+    uint32_t state;
+    uint32_t mult;
+    uint32_t plen;
+    bool gpi = false;
+    bool source_is_new = false;
+    msg_type = (char *)tvb_get_string_enc(pinfo->pool, tvb, offset, 4, ENC_ASCII);
     offset += 4;
     if (info == NULL)
     {
@@ -373,9 +396,9 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
     if (get_opcode_description(msg_type))
     {
         int msg_count = (int)tvb_get_uint8(tvb, offset + 1);
-        proto_tree_add_string_format(tree, hf_axia_opcode, tvb, offset - 4, 4, msg_type,
-                                     "Operation: %s (%s)", get_opcode_description(msg_type), msg_type);
-        offset += tree_add_value(tree, tvb, offset, hf_axia_msg_count);
+        proto_tree_add_string_format_value(tree, hf_axia_opcode, tvb, offset - 4, 4, msg_type,
+                                     "%s (%s)", get_opcode_description(msg_type), msg_type);
+        offset += axia_adv_tree_add_field(tree, tvb, offset, hf_axia_msg_count);
         for (int i = 0; i < msg_count; i++)
         {
             increment_dissection_depth(pinfo);
@@ -397,17 +420,17 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             ws_assert(msg_type);
             if (strcmp(msg_type, "PVER") == 0)
             {
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_pver);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_pver);
             }
             else if (strcmp(msg_type, "ADVT") == 0)
             {
                 col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(tvb_get_uint8(tvb, offset + 1), advtypenames, "Unknown Livewire Advertisement type"));
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_advt);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_advt);
             }
             else if (strcmp(msg_type, "TERM") == 0)
             {
-                int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                proto_item *ti = proto_tree_add_item(tree, hf_axia_term, tvb, offset - 4, len + 7, ENC_NA);
+                int term_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                ti = proto_tree_add_item(tree, hf_axia_term, tvb, offset - 4, term_len + 7, ENC_NA);
                 proto_tree *term_tree = proto_item_add_subtree(ti, ett_axia_adv);
                 proto_item_set_text(ti, "Terminal Information");
                 info->term_info = wmem_new0(wmem_file_scope(), axia_term_info_t);
@@ -422,7 +445,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 {
                     setup_adv_conversation(pinfo, info->term_info);
                 }
-                return offset + len + 3;
+                return offset + term_len + 3;
             }
             else if (msg_type[0] == 'S' &&
                     msg_type[1] >= '0' && msg_type[1] <= '9' &&
@@ -431,8 +454,8 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             {
                 info->nums++;
                 int src_num = ((msg_type[1] - '0') * 100) + ((msg_type[2] - '0') * 10) + (msg_type[3] - '0');
-                int len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                proto_item *ti = proto_tree_add_item(tree, hf_axia_src, tvb, offset - 4, len + 7, ENC_NA);
+                int src_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
+                ti = proto_tree_add_item(tree, hf_axia_src, tvb, offset - 4, src_len + 7, ENC_NA);
                 proto_tree *source_tree = proto_item_add_subtree(ti, ett_axia_adv);
                 proto_item_set_text(ti, "Source %d", src_num);
                 info->src_info = wmem_new0(wmem_file_scope(), axia_src_info_t);
@@ -452,7 +475,9 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                     }
                     proto_item_append_text(ti, "]");
                     if (!info->src_info->setup_frame)
+                    {
                         info->src_info->setup_frame = pinfo->num;
+                    }
                     else if (info->src_info->setup_frame != pinfo->num)
                     {
                         ti = proto_tree_add_uint(source_tree, hf_axia_src_setup_frame, tvb, 0, 0, info->src_info->setup_frame);
@@ -475,7 +500,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                     }
                 }
                 setup_axia_transport(pinfo, info->src_info->psid);
-                return offset + len + 3;
+                return offset + src_len + 3;
             }
             break;
         case SECTION_TERM:
@@ -483,7 +508,7 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             if (strcmp(msg_type, "INIP") == 0)
             {
                 info->term_info->inip = tvb_get_ipv4(tvb, offset + 1);
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_inip);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_inip);
             }
             else if (strcmp(msg_type, "HWID") == 0)
             {
@@ -504,32 +529,32 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                 {
                     wmem_tree_insert32(axia_nodes, info->term_info->hwid, (void *)info->term_info);
                 }
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_hwid);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_hwid);
             }
             else if (strcmp(msg_type, "ADVV") == 0)
             {
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_advv);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_advv);
             }
             else if (strcmp(msg_type, "UDPC") == 0)
             {
                 info->term_info->udpc = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_udpc);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_udpc);
             }
             else if (strcmp(msg_type, "NUMS") == 0)
             {
                 info->term_info->nums = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_nums);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_nums);
             }
             else if (strcmp(msg_type, "ATRN") == 0)
             {
                 int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                char *atrn = (char *)tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                char *atrn = (char *)tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII);
                 info->term_info->atrn = atrn;
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_atrn);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_atrn);
             }
             else if (strcmp(msg_type, "TYPE") == 0)
             {
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_term_type);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_term_type);
             }
             break;
         case SECTION_SOURCE:
@@ -537,41 +562,41 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             if (strcmp(msg_type, "PSID") == 0)
             {
                 info->src_info->psid = tvb_get_uint32(tvb, offset + 1, ENC_BIG_ENDIAN);
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_psid);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_psid);
             }
             else if (strcmp(msg_type, "PSNM") == 0)
             {
                 int str_len = tvb_get_uint16(tvb, offset + 1, ENC_BIG_ENDIAN);
-                char *psnm = (char *)tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII | ENC_NA);
+                char *psnm = (char *)tvb_get_string_enc(wmem_file_scope(), tvb, offset + 3, str_len, ENC_ASCII);
                 info->src_info->psnm = psnm;
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_psnm);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_psnm);
             }
             else if (strcmp(msg_type, "LABL") == 0)
             {
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_labl);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_labl);
             }
             else if (strcmp(msg_type, "FSID") == 0)
             {
                 ws_in4_addr fsid = tvb_get_ipv4(tvb, offset + 1);
                 info->src_info->fsid = fsid;
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_fsid);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_fsid);
             }
             else if (strcmp(msg_type, "BSID") == 0)
             {
                 info->src_info->bsid = tvb_get_ipv4(tvb, offset + 1);
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_bsid);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_bsid);
             }
             else if (strcmp(msg_type, "SHAB") == 0)
             {
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_shab);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_shab);
             }
             else if (strcmp(msg_type, "LPID") == 0)
             {
-                return offset + tree_add_value(tree, tvb, offset, hf_axia_src_lpid);
+                return offset + axia_adv_tree_add_field(tree, tvb, offset, hf_axia_src_lpid);
             }
             else if (strcmp(msg_type, "BUSY") == 0 && tvb_get_uint8(tvb, offset) == 0x9)
             {
-                proto_item *ti = proto_tree_add_item(tree, hf_axia_busy, tvb, offset + 1, 8, ENC_BIG_ENDIAN);
+                ti = proto_tree_add_item(tree, hf_axia_busy, tvb, offset + 1, 8, ENC_NA);
                 if (tvb_get_uint64(tvb, offset + 1, ENC_BIG_ENDIAN) == 0)
                 {
                     // free
@@ -602,17 +627,10 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             }
             break;
         case SECTION_GPIO:
-            uint32_t lpid;
-            uint32_t lcid;
-            uint32_t state;
-            uint32_t mult;
-            uint32_t len;
-            bool gpi = false;
-            bool source_is_new = false;
-            proto_item *ti = proto_tree_add_item(tree, hf_axia_gpio, tvb, offset + 1, 5, ENC_NA);
+            ti = proto_tree_add_item(tree, proto_axia_gpio, tvb, offset + 1, 5, ENC_NA);
             proto_tree *gpio_tree = proto_item_add_subtree(ti, ett_axia_adv);
             proto_item *lpid_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_src_lpid, tvb, offset + 1, 2, ENC_BIG_ENDIAN, &lpid);
-            if (lpid != 0xFF)
+            if (lpid != 0xff)
             {
                 if (info->lpid != lpid)
                     source_is_new = true;
@@ -645,21 +663,23 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             proto_item_append_text(lcid_item, gpi ? " (GPI Pin %d)" : " (GPO Pin %d)", lcid);
             proto_item *pmult_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_pmult, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &mult);
             proto_item *state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_state, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
-            proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &len);
-            if (!state && !mult && len <= 1)
+            proto_item *plen_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_plen, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &plen);
+            if (!state && !mult && plen <= 1)
             {
                 proto_item_set_hidden(state_item);
                 proto_item_set_hidden(plen_item);
                 proto_item_set_hidden(pmult_item);
                 state_item = proto_tree_add_item_ret_uint(gpio_tree, hf_axia_gpio_state2, tvb, offset + 5, 1, ENC_BIG_ENDIAN, &state);
-                len = 0;
-            } else {
-                len *= mult ? 10 : 250;
+                plen = 0;
+            }
+            else
+            {
+                plen *= mult ? 10 : 250;
                 proto_item_append_text(pmult_item, " (%s)", mult ? "10 mS" : "250 mS");
             }
             proto_item_append_text(state_item, " (%s)", state ? "Low" : "High");
-            if (len)
-                proto_item_append_text(plen_item, " (%d mS)", len);
+            if (plen)
+                proto_item_append_text(plen_item, " (%d mS)", plen);
             proto_item_append_text(ti, ": LPID=%d ", lpid);
             if (source_is_new)
                 col_append_fstr(pinfo->cinfo, COL_INFO, "LPID=%d ", lpid);
@@ -671,17 +691,17 @@ static int dissect_axia_adv_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
             }
             proto_item_append_text(ti, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
             col_append_fstr(pinfo->cinfo, COL_INFO, "Pin=%s %d State=", gpi ? "GPI" : "GPO", lcid);
-            if (len)
+            if (plen)
             {
                 proto_item_append_text(ti, "Pulse ");
-                col_append_fstr(pinfo->cinfo, COL_INFO, "Pulse ");
+                col_append_str(pinfo->cinfo, COL_INFO, "Pulse ");
             }
             proto_item_append_text(ti, "%s ", state ? "Low" : "High");
             col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", state ? "Low" : "High");
-            if (len)
+            if (plen)
             {
-                proto_item_append_text(ti, "for %dmS ", len);
-                col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", len);
+                proto_item_append_text(ti, "for %dmS ", plen);
+                col_append_fstr(pinfo->cinfo, COL_INFO, "for %dmS ", plen);
             }
             return offset + 6;
             break;
@@ -738,7 +758,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_type, tvb, 20, 1, ENC_NA, &type);
     proto_tree_add_item_ret_uint(axia_clock_tree, hf_axia_clock_prio, tvb, 27, 1, ENC_NA, &priority);
     ti = proto_tree_add_item_ret_ether(axia_clock_tree, hf_axia_clock_mac, tvb, 30, 6, ENC_NA, mac_address);
-    alloc_address_wmem(wmem_file_scope(), &current_clock_mac, AT_ETHER, sizeof(mac_address), mac_address);
+    alloc_address_wmem(wmem_epan_scope(), &current_clock_mac, AT_ETHER, sizeof(mac_address), mac_address);
     if (cmp_address(&current_clock_mac, &axia_master_clock.mac_address) || axia_master_clock.priority != priority)
     {
         // they do not equal, so the clock has changed... or something
@@ -748,7 +768,7 @@ static int dissect_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     }
     else
     {
-        free_address_wmem(wmem_file_scope(), &current_clock_mac);
+        free_address_wmem(wmem_epan_scope(), &current_clock_mac);
     }
 
     bool fast_rate = type == 0x0a || type == 0x0b;
@@ -774,38 +794,44 @@ static int dissect_intercom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             return 0;
         }
     }
-    else
-    {
-        json_handle = find_dissector("json");
-    }
     return tvb_reported_length(tvb);
 }
-static uint32_t get_lwcp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_){
+static uint32_t get_lwcp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_)
+{
     int next_offset = offset;
     int tvb_len = tvb_reported_length(tvb);
-    bool in_encap = FALSE;
-    bool in_quotes = FALSE;
-    while(next_offset < tvb_len){
-        if (tvb_strneql(tvb, next_offset, "%BeginEncap%", 12) == 0) {
-            in_encap = TRUE;
+    bool in_encap = false;
+    bool in_quotes = false;
+    while(next_offset < tvb_len)
+    {
+        if (tvb_strneql(tvb, next_offset, "%BeginEncap%", 12) == 0)
+        {
+            in_encap = true;
             next_offset += 12;
             continue;
         }
-        if (tvb_strneql(tvb, next_offset, "%EndEncap%", 10) == 0) {
-            in_encap = FALSE;
+        if (tvb_strneql(tvb, next_offset, "%EndEncap%", 10) == 0)
+        {
+            in_encap = false;
             next_offset += 10;
             continue;
         }
         char c = tvb_get_uint8(tvb, next_offset);
-        if (c == '"'){
+        if (c == '"')
+        {
             in_quotes = !in_quotes;
         }
-        if (!in_encap && !in_quotes) {
-            if (c == '\r') {
-                if (next_offset + 1 < tvb_len && tvb_get_uint8(tvb, next_offset + 1) == '\n'){
+        if (!in_encap && !in_quotes)
+        {
+            if (c == '\r')
+            {
+                if ((next_offset + 1 < tvb_len) && (tvb_get_uint8(tvb, next_offset + 1) == '\n'))
+                {
                     return next_offset - offset + 2;
                 }
-            } else if (c == '\n'){
+            }
+            else if (c == '\n')
+            {
                 return next_offset - offset + 1;
             }
         }
@@ -813,7 +839,8 @@ static uint32_t get_lwcp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offs
     }
     return 0;
 }
-static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_) {
+static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LWCP");
     col_clear(pinfo->cinfo, COL_INFO);
     proto_item *ti = proto_tree_add_item(tree, proto_axia_lwcp, tvb, 0, -1, ENC_NA);
@@ -826,80 +853,100 @@ static int dissect_lwcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     char *op;
     char *obj;
     char *prop;
-    while(offset < tvb_reported_length(tvb)) {
-        if (tvb_strneql(tvb, offset, "%BeginEncap%", 12) == 0) {
+    while(offset < tvb_reported_length(tvb))
+    {
+        if (tvb_strneql(tvb, offset, "%BeginEncap%", 12) == 0)
+        {
             encap_depth++;
             offset += 12;
             continue;
         }
-        if (tvb_strneql(tvb, offset, "%EndEncap%", 10) == 0) {
+        if (tvb_strneql(tvb, offset, "%EndEncap%", 10) == 0)
+        {
             encap_depth--;
             offset += 10;
             continue;
         }
 
         char c = tvb_get_uint8(tvb, offset);
-        if (c == '"'){
+        if (c == '"')
+        {
             in_quotes = !in_quotes;
-        } else if (c == '[') {
+        }
+        else if (c == '[')
+        {
             encap_depth++;
-        } else if (c == ']') {
+        }
+        else if (c == ']')
+        {
             encap_depth--;
         }
-        if (encap_depth == 0 && !in_quotes) {
+        if (encap_depth == 0 && !in_quotes)
+        {
             int len = offset - start;
-            bool over = FALSE;
-            if (c == '\n' || c == '\r') {
-                over = TRUE;
-            } else if (offset == tvb_reported_length(tvb) - 1) {
-                over = TRUE;
+            bool over = false;
+            if (c == '\n' || c == '\r')
+            {
+                over = true;
+            }
+            else if (offset == tvb_reported_length(tvb) - 1)
+            {
+                over = true;
                 len++;
             }
-            if (over || c == ' '){
-                switch(field) {
+            if (over || c == ' ')
+            {
+                switch(field)
+                {
                     case 0:
-                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_opcode, tvb, start, len, ENC_ASCII | ENC_NA,
+                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_opcode, tvb, start, len, ENC_ASCII,
                             wmem_file_scope(), &op);
                         col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", op);
                         break;
                     case 1:
-                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_object, tvb, start, len, ENC_ASCII | ENC_NA,
+                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_object, tvb, start, len, ENC_ASCII,
                             wmem_file_scope(), &obj);
                         col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", obj);
                         break;
                     default:
-                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA,
+                        proto_tree_add_item_ret_display_string(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII,
                             wmem_file_scope(), &prop);
                         col_append_str(pinfo->cinfo, COL_INFO, prop);
-                        if (!over) {
+                        if (!over)
+                        {
                             col_append_str(pinfo->cinfo, COL_INFO, ", ");
                         }
                         break;
                 }
-                if (over) {
+                if (over)
+                {
                     return tvb_reported_length(tvb);
                 }
                 field++;
                 start = offset + 1;
             }
-            else if (c == ',') {
-                if (tvb_reported_length(tvb) > offset && tvb_get_uint8(tvb, offset + 1) == ' '){
-                    proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA);
+            else if (c == ',')
+            {
+                if (tvb_reported_length(tvb) > offset && tvb_get_uint8(tvb, offset + 1) == ' ')
+                {
+                    proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII);
                     start = offset + 2;
                     offset++;
-                } else {
-                    proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII | ENC_NA);
+                }
+                else
+                {
+                    proto_tree_add_item(axia_lwcp_tree, hf_axia_lwcp_property, tvb, start, len, ENC_ASCII);
                     start = offset + 1;
                 }
             }
         }
         offset++;
     }
-    col_append_fstr(pinfo->cinfo, COL_INFO, "%s %s %s", op, obj, prop);
     return tvb_reported_length(tvb);
 }
-static int dissect_lwcp_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data){
-    tcp_dissect_pdus(tvb, pinfo, tree, TRUE, 1, get_lwcp_pdu_len, dissect_lwcp, data);
+static int dissect_lwcp_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    tcp_dissect_pdus(tvb, pinfo, tree, true, 1, get_lwcp_pdu_len, dissect_lwcp, data);
     return tvb_reported_length(tvb);
 }
 static bool test_lwadv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -956,11 +1003,13 @@ static bool test_lwclock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
         return false;
     if (!cmp_address(&pinfo->net_dst, &slow_clock_address) && pinfo->destport != AXIA_SLOW_CLOCK_PORT)
         return false;
-    if (tvb_captured_length(tvb) != 36)
+    if (tvb_captured_length(tvb) != 36) /* RTP Header (12 bytes) + Extension profile and length (4 bytes) + 20 bytes of extension */
         return false;
-    if (tvb_get_uint8(tvb, 0) != 0x90)
+    if (tvb_get_uint8(tvb, 0) != AXIA_CLOCK_RTP_VERSION) /* RTP Version 2, no padding, with Extension and no CSRCs */
         return false;
-    if (tvb_get_uint8(tvb, 1) != 0xff)
+    if (tvb_get_uint8(tvb, 1) != AXIA_CLOCK_RTP_PAYLOAD_TYPE) /* RTP Payload Type = 127 + Mark bit */
+        return false;
+    if (tvb_get_uint16(tvb, 12, ENC_BIG_ENDIAN) != AXIA_CLOCK_RTP_EXTENSION_PROFILE) /* RTP Extension Profile 0xfa1a */
         return false;
     if (dissect_lwclock(tvb, pinfo, tree, data))
     {
@@ -986,65 +1035,64 @@ void proto_register_lwadv(void)
 {
     expert_module_t* expert_livewire;
     static hf_register_info hf_adv[] = {
-        {&hf_axia_magic_num,        {"Axia Magic Number",           "axia_adv.magic_number",    FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_seq,              {"Sequence",                    "axia_adv.seq",             FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_msg_count,        {"Nested message count",        "axia_adv.msgcount",        FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_pver,             {"Protocol Version",            "axia_adv.pver",            FT_UINT16,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_advt,             {"Advertisement type",          "axia_adv.advt",            FT_UINT8,       BASE_HEX,   VALS(advtypenames),     0x0,            NULL,                                           HFILL}},
-        {&hf_axia_unk_u8,           {"Unknown Byte",                "axia_adv.unknown",         FT_UINT8,       BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_unk_u16,          {"Unknown Int",                 "axia_adv.unknown",         FT_UINT16,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_unk_u32,          {"Unknown Int",                 "axia_adv.unknown",         FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_unk_data,         {"Unknown Data",                "axia_adv.unknown",         FT_BYTES,       SEP_COLON,  NULL,                   0x0,            "",                                             HFILL}},
-        {&hf_axia_unk_str,          {"Unknown String",              "axia_adv.unknown",         FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_opcode,           {"Operation",                   "axia_adv.opcode",          FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term,             {"Terminal Information",        "axia_adv.term",            FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_inip,        {"IP Address",                  "axia_adv.term.inip",       FT_IPv4,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_hwid,        {"Hardware ID",                 "axia_adv.term.hwid",       FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_advv,        {"Advertisement Version",       "axia_adv.term.advv",       FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_udpc,        {"UDP Port",                    "axia_adv.term.udpc",       FT_UINT16,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_nums,        {"Number of Sources",           "axia_adv.term.nums",       FT_UINT16,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_atrn,        {"Terminal Name",               "axia_adv.term.atrn",       FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_term_type,        {"Type",                        "axia_adv.term.type",       FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_magic_num,        {"Axia Magic Number",           "axia_adv.magic_number",    FT_NONE,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_seq,              {"Sequence",                    "axia_adv.seq",             FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_msg_count,        {"Nested message count",        "axia_adv.msgcount",        FT_UINT8,       BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_pver,             {"Protocol Version",            "axia_adv.pver",            FT_UINT16,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_advt,             {"Advertisement type",          "axia_adv.advt",            FT_UINT8,       BASE_HEX,   VALS(advtypenames),     0x0,    NULL,                                           HFILL}},
+        {&hf_axia_unk_u8,           {"Unknown Byte",                "axia_adv.unknown_u8",      FT_UINT8,       BASE_HEX,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_unk_u16,          {"Unknown Int",                 "axia_adv.unknown_u16",     FT_UINT16,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_unk_u32,          {"Unknown Int",                 "axia_adv.unknown_u32",     FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_unk_data,         {"Unknown Data",                "axia_adv.unknown_data",    FT_BYTES,       SEP_COLON,  NULL,                   0x0,    NULL,                                             HFILL}},
+        {&hf_axia_unk_str,          {"Unknown String",              "axia_adv.unknown_string",  FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_opcode,           {"Operation",                   "axia_adv.opcode",          FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term,             {"Terminal Information",        "axia_adv.term",            FT_NONE,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_inip,        {"IP Address",                  "axia_adv.term.inip",       FT_IPv4,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_hwid,        {"Hardware ID",                 "axia_adv.term.hwid",       FT_UINT16,      BASE_HEX,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_advv,        {"Advertisement Version",       "axia_adv.term.advv",       FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_udpc,        {"UDP Port",                    "axia_adv.term.udpc",       FT_UINT16,      BASE_PT_UDP,NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_nums,        {"Number of Sources",           "axia_adv.term.nums",       FT_UINT16,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_atrn,        {"Terminal Name",               "axia_adv.term.atrn",       FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_term_type,        {"Type",                        "axia_adv.term.type",       FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
 
-        {&hf_axia_src,              {"Source Information",          "axia_adv.src",             FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_psid,         {"Livewire Source ID",          "axia_adv.src.psid",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_shab,         {"Sharable",                    "axia_adv.src.shab",        FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_fsid,         {"Multicast address",           "axia_adv.src.fsid",        FT_IPv4,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_bsid,         {"Backfeed address",            "axia_adv.src.bsid",        FT_IPv4,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_psnm,         {"Name",                        "axia_adv.src.psnm",        FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_labl,         {"Label",                       "axia_adv.src.labl",        FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_lpid,         {"Logic Port ID",               "axia_adv.src.lpid",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_src_setup_frame,  {"Setup Frame",                 "axia_adv.src.setup-frame", FT_FRAMENUM,    BASE_NONE,  NULL,                   0x0,            "First frame that advertised this source",      HFILL}},
-        {&hf_axia_src_is_mm,        {"Is Backfeed",                 "axia_adv.src.is-backfeed", FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            "Is this source a backfeed from a console?",    HFILL}},
+        {&hf_axia_src,              {"Source Information",          "axia_adv.src",             FT_NONE,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_psid,         {"Livewire Source ID",          "axia_adv.src.psid",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_shab,         {"Sharable",                    "axia_adv.src.shab",        FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_fsid,         {"Multicast address",           "axia_adv.src.fsid",        FT_IPv4,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_bsid,         {"Backfeed address",            "axia_adv.src.bsid",        FT_IPv4,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_psnm,         {"Name",                        "axia_adv.src.psnm",        FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_labl,         {"Label",                       "axia_adv.src.labl",        FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_lpid,         {"Logic Port ID",               "axia_adv.src.lpid",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_src_setup_frame,  {"Setup Frame",                 "axia_adv.src.setup-frame", FT_FRAMENUM,    BASE_NONE,  NULL,                   0x0,    "First frame that advertised this source",      HFILL}},
+        {&hf_axia_src_is_mm,        {"Is Backfeed",                 "axia_adv.src.is-backfeed", FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,    "Is this source a backfeed from a console?",    HFILL}},
 
-        {&hf_axia_busy,             {"Source Allocation",           "axia_adv.busy",            FT_NONE,        BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_busy_hwid,        {"Console HWID",                "axia_adv.busy.hwid",       FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_busy_fader,       {"Fader",                       "axia_adv.busy.fader",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_busy_ip,          {"Console IP Address",          "axia_adv.busy.ip",         FT_IPv4,        BASE_NONE,  NULL,                   0xFFFF0000FFFF, NULL,                                           HFILL}},
-        {&hf_axia_busy_prefix,      {"Console IP Prefix",           "axia_adv.busy.prefix",     FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_busy,             {"Source Allocation",           "axia_adv.busy",            FT_NONE,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_busy_hwid,        {"Console HWID",                "axia_adv.busy.hwid",       FT_UINT16,      BASE_HEX,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_busy_fader,       {"Fader",                       "axia_adv.busy.fader",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_busy_ip,          {"Console IP Address",          "axia_adv.busy.ip",         FT_IPv4,        BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_busy_prefix,      {"Console IP Prefix",           "axia_adv.busy.prefix",     FT_UINT16,      BASE_HEX,   NULL,                   0x0,    NULL,                                           HFILL}},
     };
     static hf_register_info hf_gpio[] = {
-        {&hf_axia_gpio,             {"GPIO Message",                "axia_gpio",                FT_NONE,        BASE_NONE,  NULL,                   0x00,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_lcid,        {"Logic Circuit ID",            "axia_gpio.lcid",           FT_UINT8,       BASE_DEC,   NULL,                   0x0F,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_state,       {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x40,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_state2,      {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x01,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_pmult,       {"Pulse length multiplier",     "axia_gpio.pulse_len_mult", FT_UINT8,       BASE_DEC,   NULL,                   0x80,           NULL,                                           HFILL}},
-        {&hf_axia_gpio_plen,        {"Pulse length",                "axia_gpio.pulse_len",      FT_UINT8,       BASE_DEC,   NULL,                   0x3F,           NULL,                                           HFILL}},
+        {&hf_axia_gpio_lcid,        {"Logic Circuit ID",            "axia_gpio.lcid",           FT_UINT8,       BASE_DEC,   NULL,                   0x0f,   NULL,                                           HFILL}},
+        {&hf_axia_gpio_state,       {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x40,   NULL,                                           HFILL}},
+        {&hf_axia_gpio_state2,      {"Logic Circuit State",         "axia_gpio.state",          FT_UINT8,       BASE_DEC,   NULL,                   0x01,   NULL,                                           HFILL}},
+        {&hf_axia_gpio_pmult,       {"Pulse length multiplier",     "axia_gpio.pulse_len_mult", FT_UINT8,       BASE_DEC,   NULL,                   0x80,   NULL,                                           HFILL}},
+        {&hf_axia_gpio_plen,        {"Pulse length",                "axia_gpio.pulse_len",      FT_UINT8,       BASE_DEC,   NULL,                   0x3f,   NULL,                                           HFILL}},
     };
     static hf_register_info hf_clock[] ={
-        {&hf_axia_clock_hwid,       {"Clock Hardware ID",           "axia_clock.hwid",          FT_UINT16,      BASE_HEX,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_prio,       {"Priority",                    "axia_clock.priority",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_mac,        {"Clock MAC Address",           "axia_clock.mac",           FT_ETHER,       BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_samp,       {"RTP Timestamp",               "axia_clock.rtp_ts",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_fast,       {"Timstamp in live packets",    "axia_clock.fast",          FT_UINT32,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_seq,        {"Sequence",                    "axia_clock.seq",           FT_UINT16,      BASE_DEC,   NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_rate,       {"Is Fast-Rate Clock",          "axia_clock.rate",          FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_clock_type,       {"Clock message type",          "axia_clock.type",          FT_UINT8,       BASE_HEX,   VALS(clocktypenames),   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_clock_hwid,       {"Clock Hardware ID",           "axia_clock.hwid",          FT_UINT16,      BASE_HEX,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_prio,       {"Priority",                    "axia_clock.priority",      FT_UINT8,       BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_mac,        {"Clock MAC Address",           "axia_clock.mac",           FT_ETHER,       BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_samp,       {"RTP Timestamp",               "axia_clock.rtp_ts",        FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_fast,       {"Timstamp in live packets",    "axia_clock.fast",          FT_UINT32,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_seq,        {"Sequence",                    "axia_clock.seq",           FT_UINT16,      BASE_DEC,   NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_rate,       {"Is Fast-Rate Clock",          "axia_clock.rate",          FT_BOOLEAN,     BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_clock_type,       {"Clock message type",          "axia_clock.type",          FT_UINT8,       BASE_HEX,   VALS(clocktypenames),   0x0,    NULL,                                           HFILL}},
     };
     static hf_register_info hf_lwcp[] ={
-        {&hf_axia_lwcp_opcode,      {"Operation",                   "axia_lwcp.opcode",         FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_lwcp_object,      {"Object",                      "axia_lwcp.object",         FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
-        {&hf_axia_lwcp_property,    {"Property",                    "axia_lwcp.property",       FT_STRING,      BASE_NONE,  NULL,                   0x0,            NULL,                                           HFILL}},
+        {&hf_axia_lwcp_opcode,      {"Operation",                   "axia_lwcp.opcode",         FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_lwcp_object,      {"Object",                      "axia_lwcp.object",         FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
+        {&hf_axia_lwcp_property,    {"Property",                    "axia_lwcp.property",       FT_STRING,      BASE_NONE,  NULL,                   0x0,    NULL,                                           HFILL}},
     };
     static ei_register_info ei[] = {
         { &ei_axia_clock_changed, {"axia_clock.masterchanged", PI_PROTOCOL, PI_WARN, "Livewire Master Clock Changed", EXPFILL }},
@@ -1054,6 +1102,18 @@ void proto_register_lwadv(void)
         &ett_axia_gpio,
         &ett_axia_clock,
     };
+
+    uint32_t ip4_addr;
+    str_to_ip(AXIA_FAST_CLOCK_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &fast_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    str_to_ip(AXIA_SLOW_CLOCK_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &slow_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    str_to_ip(AXIA_ADV_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &advertisement_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    str_to_ip(AXIA_GPIO_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &gpio_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
+    str_to_ip(AXIA_INTERCOM_ADDR, &ip4_addr);
+    alloc_address_wmem(wmem_epan_scope(), &intercom_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
 
     proto_axia_adv = proto_register_protocol("Livewire Source Advertisement", "LW Advertisement", "axia_adv");
     proto_axia_gpio = proto_register_protocol("Livewire Multicast GPIO", "LW GPIO", "axia_gpio");
@@ -1080,17 +1140,6 @@ void proto_reg_handoff_axia(void)
 {
     axia_sources = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
     axia_nodes = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
-    uint32_t ip4_addr;
-    str_to_ip(AXIA_FAST_CLOCK_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_epan_scope(), &fast_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    str_to_ip(AXIA_SLOW_CLOCK_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_epan_scope(), &slow_clock_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    str_to_ip(AXIA_ADV_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_epan_scope(), &advertisement_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    str_to_ip(AXIA_GPIO_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_epan_scope(), &gpio_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
-    str_to_ip(AXIA_INTERCOM_ADDR, &ip4_addr);
-    alloc_address_wmem(wmem_epan_scope(), &intercom_address, AT_IPv4, sizeof(uint32_t), &ip4_addr);
     heur_dissector_add("udp", test_lwadv, "Livewire Source Advertisement Heuristic Dissector", "axia_adv_heur", proto_axia_adv, HEURISTIC_ENABLE);
     heur_dissector_add("udp", test_lwgpio, "Livewire GPIO Heuristic Dissector", "axia_gpio_heur", proto_axia_gpio, HEURISTIC_ENABLE);
     heur_dissector_add("udp", test_lwclock, "Livewire Clock Heuristic Dissector", "axia_clock_heur", proto_axia_clock, HEURISTIC_ENABLE);
@@ -1102,6 +1151,7 @@ void proto_reg_handoff_axia(void)
     dissector_add_for_decode_as("udp.port", axia_intercom_handle);
     dissector_add_for_decode_as("tcp.port", lwcp_tcp_handle);
     dissector_add_for_decode_as("udp.port", lwcp_handle);
+    json_handle = find_dissector("json");
 }
 void plugin_register(void)
 {
