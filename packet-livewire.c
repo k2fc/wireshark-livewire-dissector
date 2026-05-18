@@ -119,7 +119,13 @@ static int ett_axia_lwcp;
 
 static expert_field ei_axia_clock_changed;
 
+// Tree which stores axia_src_info_t structs by PSID (Channel Number)
+// All sources picked up from advertisements in this capture should be in here.
+// PSID is negated for backfeed sources.
 static wmem_tree_t *axia_sources;
+
+// Tree which stores axia_term_info_t structs by HWID (two LSBs from IP address)
+// All nodes picked up from advertisements in this capture should be in here.
 static wmem_tree_t *axia_nodes;
 
 static address fast_clock_address;
@@ -128,6 +134,7 @@ static address advertisement_address;
 static address gpio_address;
 static address intercom_address;
 
+// Enum to keep track of where we are in the advertisement packet
 typedef enum
 {
     SECTION_ADV_BASE,
@@ -136,27 +143,30 @@ typedef enum
     SECTION_GPIO,
 } axia_adv_section_e;
 
+// Node information as received from advertisements
 typedef struct
 {
-    uint16_t hwid;
-    char *atrn;
-    ws_in4_addr inip;
-    uint16_t udpc;
-    conversation_t *conversation;
-    uint32_t nums;
+    uint16_t hwid;                  // Hardware ID (2 LSBs of IP)
+    char *atrn;                     // Name of the node
+    ws_in4_addr inip;               // IP address of the node
+    uint16_t udpc;                  // UDP port on which messages can be sent to the node
+    conversation_t *conversation;   // Pointer to the conversation on the IP and UDP port
+    uint32_t nums;                  // Number of sources on this node
 } axia_term_info_t;
 
+//  Source information as received from advertisments
 typedef struct
 {
-    uint32_t psid;
-    ws_in4_addr fsid;
-    ws_in4_addr bsid;
-    char *psnm;
-    axia_term_info_t *term;
-    ws_in4_addr rtp_added;
-    uint32_t setup_frame;
+    uint32_t psid;                  // Primary source ID (Livewire channel number)
+    ws_in4_addr fsid;               // Multicast IP for RTP audio
+    ws_in4_addr bsid;               // Multicast IP for RTP backfeed audio
+    char *psnm;                     // Source name
+    axia_term_info_t *term;         // The node where this audio originates
+    ws_in4_addr rtp_added;          // Stores the RTP address when added to the RTP conversation table
+    uint32_t setup_frame;           // The frame number where this RTP source was originally setup
 } axia_src_info_t;
 
+// Struct to hold Node and Source information as we go through an advertisment
 typedef struct
 {
     axia_term_info_t *term_info;
@@ -165,12 +175,14 @@ typedef struct
     int32_t nums;
 } axia_adv_info_t;
 
+// Struct to keep track of master clock properties
 typedef struct
 {
     address mac_address;
-    uint32_t priority;
+    uint32_t priority;              // 7 = always master. 0 = never master
 } axia_clock_t;
 
+// The master clock last dissected
 static axia_clock_t axia_master_clock;
 
 static dissector_handle_t axia_adv_handle;
